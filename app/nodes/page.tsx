@@ -11,6 +11,8 @@ import { NodeConfigDialog } from "@/components/NodeConfigDialog"
 import { DeleteNodeButton } from "@/components/DeleteNodeButton" 
 import { Sidebar } from "@/components/Sidebar"
 
+export const dynamic = 'force-dynamic';
+
 // Database se live data lane ka function
 async function getDevices() {
   const client = await clientPromise;

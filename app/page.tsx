@@ -8,6 +8,8 @@ import {
 import Link from "next/link"
 import { Sidebar } from "@/components/Sidebar"
 
+export const dynamic = 'force-dynamic';
+
 async function getDashboardStats() {
   try {
     const client = await clientPromise;
