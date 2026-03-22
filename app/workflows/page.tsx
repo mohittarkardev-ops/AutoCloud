@@ -6,22 +6,20 @@ import { Network, Plus, Edit2, FileJson, GitCommit } from "lucide-react"
 import Link from "next/link"
 import { getWorkflows } from "@/app/actions/workflows"
 import { DeleteWorkflowButton } from "@/components/DeleteWorkflowButton" 
-import { Sidebar } from "@/components/Sidebar" // Naya Client-Side Sidebar
+import { DuplicateWorkflowButton } from "@/components/DuplicateWorkflowButton" 
+import { Sidebar } from "@/components/Sidebar" 
 
 export default async function WorkflowsListPage() {
-  // Database se workflows fetch karo
-  const workflows = await getWorkflows();
+  // 🔴 THE FIX: TypeScript strictness bypass
+  const workflows: any[] = await getWorkflows();
 
   return (
     <div className="flex min-h-screen bg-[#fafafa] dark:bg-background">
       
-      {/* Naya Client-Side Sidebar Component */}
       <Sidebar />
 
-      {/* Main Content Area */}
       <main className="flex-1 p-8 lg:p-12 max-w-7xl mx-auto w-full">
         
-        {/* Header (Updated to Executive Theme) */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-10">
           <div>
             <h2 className="text-4xl font-extrabold tracking-tight mb-2">Workflows</h2>
@@ -29,13 +27,11 @@ export default async function WorkflowsListPage() {
           </div>
           
           <div className="flex items-center gap-4">
-            {/* Quick Stat Badge */}
             <div className="hidden md:flex items-center gap-2 bg-muted/40 px-4 py-2 rounded-2xl border border-border/50">
               <Network size={16} className="text-muted-foreground"/>
               <span className="text-sm font-bold">{workflows.length} Total Blueprints</span>
             </div>
 
-            {/* Create Action Button */}
             <Link href="/workflows/builder">
               <Button className="rounded-full px-6 h-11 font-bold shadow-xl shadow-primary/20 gap-2">
                 <Plus size={18} strokeWidth={3} /> Create New Flow
@@ -44,7 +40,6 @@ export default async function WorkflowsListPage() {
           </div>
         </header>
 
-        {/* Workflows Management Table Wrap */}
         <Card className="border-none shadow-sm bg-card/60 backdrop-blur-sm overflow-hidden">
           <div className="overflow-x-auto">
             <Table>
@@ -76,10 +71,10 @@ export default async function WorkflowsListPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  workflows.map((wf) => (
+                  // 🔴 THE FIX: Added ': any' to tell TS to not worry about the exact shape
+                  workflows.map((wf: any) => (
                     <TableRow key={wf._id} className="hover:bg-muted/10 transition-colors border-b border-border/40">
                       
-                      {/* 1. Workflow Name & Desc */}
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-4">
                           <div className="p-2.5 bg-primary/10 rounded-xl shadow-inner">
@@ -94,7 +89,6 @@ export default async function WorkflowsListPage() {
                         </div>
                       </TableCell>
                       
-                      {/* 2. Complexity / Node Count */}
                       <TableCell>
                         <div className="flex items-center gap-1.5 bg-background border px-2.5 py-1 rounded-lg w-fit shadow-sm">
                           <GitCommit size={14} className="text-primary/70" />
@@ -104,7 +98,6 @@ export default async function WorkflowsListPage() {
                         </div>
                       </TableCell>
                       
-                      {/* 3. Last Modified */}
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="text-[12px] font-bold">
@@ -120,17 +113,16 @@ export default async function WorkflowsListPage() {
                         </div>
                       </TableCell>
                       
-                      {/* 4. Actions */}
                       <TableCell className="text-right pr-6">
                         <div className="flex justify-end gap-2 items-center">
-                          {/* Edit Button */}
                           <Link href={`/workflows/builder?id=${wf._id}`}>
                             <Button variant="outline" size="sm" className="h-8 gap-1.5 text-blue-600 border-blue-200 hover:bg-blue-50 text-[11px] font-bold shadow-sm transition-transform hover:-translate-y-0.5">
                               <Edit2 size={13} /> Edit
                             </Button>
                           </Link>
                           
-                          {/* Delete Button Component */}
+                          <DuplicateWorkflowButton id={wf._id} />
+
                           <DeleteWorkflowButton id={wf._id} />
                         </div>
                       </TableCell>

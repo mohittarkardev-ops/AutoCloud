@@ -1,4 +1,3 @@
-// web-dashboard/components/NodeActionButtons.tsx
 'use client'
 
 import { Button } from "@/components/ui/button"
@@ -17,7 +16,8 @@ export function NodeActionButtons({ hardwareId, currentStatus }: { hardwareId: s
           size="sm" 
           variant="outline"
           className="h-8 bg-green-50 text-green-600 border-green-200 hover:bg-green-100 hover:text-green-700"
-          onClick={() => startTransition(() => updateNodeStatus(hardwareId, 'approved'))}
+          // 🔴 THE FIX: Added {} around the server action to prevent returning the Promise
+          onClick={() => startTransition(() => { updateNodeStatus(hardwareId, 'approved'); })}
           disabled={isPending}
         >
           <ShieldCheck className="w-4 h-4 mr-1" />
@@ -31,7 +31,8 @@ export function NodeActionButtons({ hardwareId, currentStatus }: { hardwareId: s
           size="sm" 
           variant="outline" 
           className="h-8 bg-red-50 text-red-600 border-red-200 hover:bg-red-100 hover:text-red-700"
-          onClick={() => startTransition(() => updateNodeStatus(hardwareId, 'blocked'))}
+          // 🔴 THE FIX: Added {} here as well
+          onClick={() => startTransition(() => { updateNodeStatus(hardwareId, 'blocked'); })}
           disabled={isPending}
         >
            <ShieldAlert className="w-4 h-4 mr-1" />

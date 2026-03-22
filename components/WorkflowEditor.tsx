@@ -306,7 +306,7 @@ const getId = () => `node_${_id++}`;
 // JSON EXPORT BUILDER
 // ─────────────────────────────────────────────
 function buildWorkflowJSON(nodes: Node[], edges: Edge[]) {
-  const trigger = nodes.find(n => (n.data as AutomationNodeData).nodeType === 'trigger');
+  const trigger = nodes.find(n => (n.data as unknown as AutomationNodeData).nodeType === 'trigger');
   const ordered: Node[] = [];
   const visited = new Set<string>();
   const queue = trigger ? [trigger.id] : [];
@@ -322,7 +322,7 @@ function buildWorkflowJSON(nodes: Node[], edges: Edge[]) {
 
   const allColumns = new Set<string>();
   const steps = ordered.map((node, idx) => {
-    const d = node.data as AutomationNodeData;
+    const d = node.data as unknown as AutomationNodeData;
     const c = d.config || {};
     const base = {
       sequence: idx + 1,
@@ -414,7 +414,7 @@ const ConfigPanel = ({
     );
   }
 
-  const d = selectedNode.data as AutomationNodeData;
+  const d = selectedNode.data as unknown as AutomationNodeData;
   const cfg = d.config || {};
 
   const updateCfg = (key: keyof NodeConfig, value: any) => {
@@ -880,7 +880,8 @@ const FlowCanvas = ({
   }, [initialName, initialDesc]);
 
   useEffect(() => {
-    const trigger = nodes.find(n => (n.data as AutomationNodeData).nodeType === 'trigger');
+    // 🔴 THE FIX 1: unknown added here
+    const trigger = nodes.find(n => (n.data as unknown as AutomationNodeData).nodeType === 'trigger');
     const seqMap = new Map<string, number>();
     if (trigger) {
       const visited = new Set<string>();
@@ -896,13 +897,14 @@ const FlowCanvas = ({
     setNodes(prev =>
       prev.map(n => {
         const newSeq = seqMap.get(n.id) ?? 0;
-        if ((n.data as AutomationNodeData).sequence !== newSeq) {
+        // 🔴 THE FIX 2: unknown added here
+        if ((n.data as unknown as AutomationNodeData).sequence !== newSeq) {
           return { ...n, data: { ...n.data, sequence: newSeq } };
         }
         return n;
       })
     );
-  }, [edges, nodes.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [edges, nodes.length]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => setNodes(nds => applyNodeChanges(changes, nds)), [setNodes]);
   const onEdgesChange = useCallback((changes: EdgeChange[]) => setEdges(eds => applyEdgeChanges(changes, eds)), [setEdges]);
@@ -1013,7 +1015,7 @@ const FlowCanvas = ({
           value: resolvedType === 'press_key' ? 'ENTER' : undefined,
         },
         status: 'idle',
-      } as AutomationNodeData,
+      } as unknown as Record<string, unknown>,
     };
     setNodes(nds => nds.concat(newNode));
   }, [reactFlowWrapper, screenToFlowPosition, setNodes]);
@@ -1355,7 +1357,7 @@ export function WorkflowEditor() {
     setNodes(nds =>
       nds.map(node => {
         if (node.id !== id) return node;
-        const current = node.data as AutomationNodeData;
+        const current = node.data as unknown as AutomationNodeData;
         return {
           ...node,
           data: {
