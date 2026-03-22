@@ -6,6 +6,8 @@ import { getWorkflows } from "@/app/actions/workflows"
 import { Sidebar } from "@/components/Sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 
+export const dynamic = 'force-dynamic';
+
 // Approved PCs fetch function
 async function getApprovedNodes() {
   const client = await clientPromise;
