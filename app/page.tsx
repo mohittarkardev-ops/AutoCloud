@@ -1,8 +1,9 @@
+// web-dashboard/app/page.tsx
 import clientPromise from "@/lib/mongodb"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { 
-  MonitorSmartphone, PlayCircle, Activity, 
+  MonitorSmartphone, Activity, 
   CheckCircle2, Wifi, WifiOff, ArrowUpRight, Zap 
 } from "lucide-react"
 import Link from "next/link"
@@ -10,6 +11,12 @@ import { Sidebar } from "@/components/Sidebar"
 
 export const dynamic = 'force-dynamic';
 
+// ─── UTILITY FUNCTION (Kept intact exactly as you designed) ───
+function cn(...inputs: any[]) {
+  return inputs.filter(Boolean).join(" ");
+}
+
+// ─── DATABASE FETCH LOGIC ───
 async function getDashboardStats() {
   try {
     const client = await clientPromise;
@@ -28,6 +35,7 @@ async function getDashboardStats() {
   }
 }
 
+// ─── MAIN COMPONENT ───
 export default async function Home() {
   const stats = await getDashboardStats();
 
@@ -36,6 +44,7 @@ export default async function Home() {
       <Sidebar />
 
       <main className="flex-1 p-8 lg:p-12 max-w-7xl mx-auto w-full">
+        
         {/* Header */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-10">
           <div>
@@ -109,17 +118,22 @@ export default async function Home() {
             ) : (
               stats.recentActivity.map((node) => {
                 const isLive = (new Date().getTime() - new Date(node.lastSeen).getTime()) < 90000;
+                
                 return (
                   <Card key={node._id.toString()} className="group hover:shadow-md transition-all duration-300 border-none bg-card/60 backdrop-blur-sm shadow-sm overflow-hidden">
                     <CardContent className="p-0">
                       <div className="flex items-center justify-between p-5">
                         <div className="flex items-center gap-5">
+                          
+                          {/* Live/Offline Icon Wrapper */}
                           <div className={cn(
                             "h-12 w-12 rounded-2xl flex items-center justify-center transition-colors shadow-inner",
                             isLive ? "bg-emerald-500/10 text-emerald-600" : "bg-red-500/10 text-red-500"
                           )}>
                             {isLive ? <Wifi size={22} /> : <WifiOff size={22} />}
                           </div>
+                          
+                          {/* Node Details */}
                           <div>
                             <div className="flex items-center gap-2 mb-1">
                                <p className="font-bold text-lg">{node.alias || node.hostname}</p>
@@ -137,10 +151,13 @@ export default async function Home() {
                             </div>
                           </div>
                         </div>
+                        
+                        {/* Timestamp */}
                         <div className="text-right">
                           <p className="text-sm font-bold">{new Date(node.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                           <p className="text-[10px] uppercase font-black tracking-widest text-muted-foreground mt-1">Last Contact</p>
                         </div>
+                        
                       </div>
                     </CardContent>
                   </Card>
@@ -149,11 +166,13 @@ export default async function Home() {
             )}
           </div>
         </section>
+
       </main>
     </div>
   )
 }
 
+// ─── UI COMPONENT: STAT CARD ───
 function StatCard({ title, value, subtitle, icon: Icon, color = "text-foreground", pulse = false }: any) {
   return (
     <Card className="border-none shadow-sm bg-card/60 backdrop-blur-sm overflow-hidden group hover:translate-y-[-2px] transition-all">
@@ -174,8 +193,4 @@ function StatCard({ title, value, subtitle, icon: Icon, color = "text-foreground
       </CardContent>
     </Card>
   )
-}
-
-function cn(...inputs: any) {
-  return inputs.filter(Boolean).join(" ");
 }

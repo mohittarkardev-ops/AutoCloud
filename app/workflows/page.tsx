@@ -7,6 +7,8 @@ import Link from "next/link"
 import { getWorkflows } from "@/app/actions/workflows"
 import { DeleteWorkflowButton } from "@/components/DeleteWorkflowButton" 
 import { DuplicateWorkflowButton } from "@/components/DuplicateWorkflowButton" 
+import { ExportWorkflowButton } from "@/components/ExportWorkflowButton" // 🔴 NEW: Export Button
+import { ImportWorkflowButton } from "@/components/ImportWorkflowButton" // 🔴 NEW: Import Button
 import { Sidebar } from "@/components/Sidebar" 
 
 export default async function WorkflowsListPage() {
@@ -31,6 +33,9 @@ export default async function WorkflowsListPage() {
               <Network size={16} className="text-muted-foreground"/>
               <span className="text-sm font-bold">{workflows.length} Total Blueprints</span>
             </div>
+
+            {/* 🔴 NEW: Import JSON Button Added Here */}
+            <ImportWorkflowButton />
 
             <Link href="/workflows/builder">
               <Button className="rounded-full px-6 h-11 font-bold shadow-xl shadow-primary/20 gap-2">
@@ -71,7 +76,6 @@ export default async function WorkflowsListPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  // 🔴 THE FIX: Added ': any' to tell TS to not worry about the exact shape
                   workflows.map((wf: any) => (
                     <TableRow key={wf._id} className="hover:bg-muted/10 transition-colors border-b border-border/40">
                       
@@ -120,6 +124,9 @@ export default async function WorkflowsListPage() {
                               <Edit2 size={13} /> Edit
                             </Button>
                           </Link>
+
+                          {/* 🔴 NEW: Export Button Added Here */}
+                          <ExportWorkflowButton workflow={wf} />
                           
                           <DuplicateWorkflowButton id={wf._id} />
 
