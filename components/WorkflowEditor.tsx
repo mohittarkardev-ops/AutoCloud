@@ -299,8 +299,8 @@ const AutomationNode = ({ data, selected }: { data: AutomationNodeData; selected
 };
 
 const nodeTypes = { automation: AutomationNode };
-let _id = 1;
-const getId = () => `node_${_id++}`;
+// 🔴 THE FIX: Generates a 100% unique ID using Time + Random String
+const getId = () => `node_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
 // ─────────────────────────────────────────────
 // JSON EXPORT BUILDER
@@ -319,10 +319,22 @@ function buildWorkflowJSON(nodes: Node[], edges: Edge[]) {
     if (node) ordered.push(node);
     edges.filter(e => e.source === id).forEach(e => queue.push(e.target));
   }
-  nodes.forEach(n => { if (!visited.has(n.id)) ordered.push(n); });
+  
+  // 🔴 FIX: Ghost Node Filter. Jo connected nahi hain, unhe ignore karo
+  nodes.forEach(n => { 
+    if (!visited.has(n.id)) {
+        console.warn(`Ignored unlinked ghost node: ${n.data?.label || n.id}`);
+        // ordered.push(n) HATA DIYA GAYA HAI
+    } 
+  });
 
   // 🔴 THE FIX: Ye line galti se delete ho gayi thi! Iske bina TypeScript ro raha tha.
   const allColumns = new Set<string>();
+  ordered.sort((a, b) => {
+    const seqA = (a.data as unknown as AutomationNodeData).sequence || 9999;
+    const seqB = (b.data as unknown as AutomationNodeData).sequence || 9999;
+    return seqA - seqB;
+  });
 
   const steps = ordered.map((node, idx) => {
     const d = node.data as unknown as AutomationNodeData;
@@ -1082,6 +1094,7 @@ const FlowCanvas = ({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        isValidConnection={(connection) => connection.source !== connection.target}
         onDrop={onDrop}
         onDragOver={onDragOver}
         nodeTypes={nodeTypes}
