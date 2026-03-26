@@ -310,6 +310,7 @@ function buildWorkflowJSON(nodes: Node[], edges: Edge[]) {
   const ordered: Node[] = [];
   const visited = new Set<string>();
   const queue = trigger ? [trigger.id] : [];
+  
   while (queue.length) {
     const id = queue.shift()!;
     if (visited.has(id)) continue;
@@ -320,12 +321,14 @@ function buildWorkflowJSON(nodes: Node[], edges: Edge[]) {
   }
   nodes.forEach(n => { if (!visited.has(n.id)) ordered.push(n); });
 
+  // 🔴 THE FIX: Ye line galti se delete ho gayi thi! Iske bina TypeScript ro raha tha.
   const allColumns = new Set<string>();
+
   const steps = ordered.map((node, idx) => {
     const d = node.data as unknown as AutomationNodeData;
     const c = d.config || {};
     const base = {
-      sequence: idx + 1,
+      sequence: d.sequence || idx + 1, // NAYA: Manual Numbering Logic
       id: node.id,
       type: d.nodeType,
       label: d.label,
@@ -338,6 +341,7 @@ function buildWorkflowJSON(nodes: Node[], edges: Edge[]) {
     };
 
     const extractCols = (str: string) => {
+      if (!str) return;
       const matches = str.matchAll(/\{\{([^}]+)\}\}/g);
       for (const m of matches) allColumns.add(m[1]);
     };
@@ -351,10 +355,10 @@ function buildWorkflowJSON(nodes: Node[], edges: Edge[]) {
     if (d.nodeType === 'loop') return { ...base, repeat: Number(c.loopCount || 3) };
     if (d.nodeType === 'js_inject') {
       extractCols(c.jsCode || '');
-      return { ...base, code: c.jsCode, excel_columns_used: [...allColumns] };
+      return { ...base, code: c.jsCode, excel_columns_used: Array.from(allColumns) };
     }
 
-    // ── NEW: Advanced Browser Action JSON exports ──
+    // Advanced Browser Action JSON exports
     if (d.nodeType === 'switch_iframe') return { ...base, action: c.action || 'enter', selector: c.selector };
     if (d.nodeType === 'switch_tab') return { ...base, action: c.action || 'next' };
     if (d.nodeType === 'press_key') return { ...base, value: c.value || 'ENTER', selector: c.selector };
@@ -363,6 +367,7 @@ function buildWorkflowJSON(nodes: Node[], edges: Edge[]) {
       extractCols(c.value || '');
       const colsUsed: string[] = [];
       (c.value || '').replace(/\{\{([^}]+)\}\}/g, (_, m) => { colsUsed.push(m); return ''; });
+      
       return {
         ...base,
         selector: c.selector,
@@ -370,7 +375,7 @@ function buildWorkflowJSON(nodes: Node[], edges: Edge[]) {
         technique: c.technique,
         ...(d.nodeType === 'checkbox' ? { action: c.checkAction } : {}),
         ...(d.nodeType === 'select' && c.technique === 'mat_autocomplete' ? { search_first_n_words: 2 } : {}),
-        excel_columns_used: [...new Set(colsUsed)],
+        excel_columns_used: Array.from(new Set(colsUsed)),
       };
     }
     return base;
@@ -381,13 +386,12 @@ function buildWorkflowJSON(nodes: Node[], edges: Edge[]) {
       workflow_version: '1.0',
       created: new Date().toISOString(),
       total_steps: steps.length,
-      excel_columns_required: [...allColumns],
+      excel_columns_required: Array.from(allColumns), // TypeScript fix: Array.from
     },
     connections: edges.map(e => ({ from: e.source, to: e.target })),
     steps,
   };
 }
-
 // ─────────────────────────────────────────────
 // CONFIG PANEL
 // ─────────────────────────────────────────────
@@ -484,6 +488,18 @@ const ConfigPanel = ({
             value={d.label}
             onChange={e => updateLabel(e.target.value)}
             className="cp-input"
+          />
+        </Field>
+
+        {/* 🔴 NAYA: Manual Step Numbering */}
+        <Field label="Step Number" hint="Manually set execution sequence (1, 2, 3...)">
+          <input
+            type="number"
+            min={1}
+            value={d.sequence || ''}
+            onChange={e => updateNodeData(selectedNode.id, { sequence: parseInt(e.target.value) || 0 })}
+            className="cp-input font-bold text-blue-600 dark:text-blue-400"
+            placeholder="e.g. 1"
           />
         </Field>
 
@@ -879,39 +895,7 @@ const FlowCanvas = ({
     if (initialDesc) setWfDesc(initialDesc);
   }, [initialName, initialDesc]);
 
-  // 🔴 FIX 1: Strict Unique Numbering (DFS) & Auto-Shift on Insert
-  useEffect(() => {
-    const trigger = nodes.find(n => (n.data as unknown as AutomationNodeData).nodeType === 'trigger');
-    const seqMap = new Map<string, number>();
-    
-    if (trigger) {
-      let currentSeq = 1;
-      const visited = new Set<string>();
-      
-      // DFS (Depth-First Traversal) गारंटी देता है कि डुप्लीकेट नंबर कभी नहीं आएंगे
-      const traverse = (nodeId: string) => {
-        if (visited.has(nodeId)) return;
-        visited.add(nodeId);
-        seqMap.set(nodeId, currentSeq++);
-        
-        const outgoingEdges = edges.filter(e => e.source === nodeId);
-        outgoingEdges.forEach(e => traverse(e.target));
-      };
-      
-      traverse(trigger.id);
-    }
-
-    setNodes(prev =>
-      prev.map(n => {
-        const newSeq = seqMap.get(n.id) ?? 0; // बिना तार वाले ब्लॉक्स को '—' (0) कर देगा
-        if ((n.data as unknown as AutomationNodeData).sequence !== newSeq) {
-          return { ...n, data: { ...n.data, sequence: newSeq } };
-        }
-        return n;
-      })
-    );
-  }, [edges, nodes.length]);
-
+  
   const onNodesChange = useCallback((changes: NodeChange[]) => setNodes(nds => applyNodeChanges(changes, nds)), [setNodes]);
   const onEdgesChange = useCallback((changes: EdgeChange[]) => setEdges(eds => applyEdgeChanges(changes, eds)), [setEdges]);
 
