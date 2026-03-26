@@ -879,25 +879,31 @@ const FlowCanvas = ({
     if (initialDesc) setWfDesc(initialDesc);
   }, [initialName, initialDesc]);
 
+  // 🔴 FIX 1: Strict Unique Numbering (DFS) & Auto-Shift on Insert
   useEffect(() => {
-    // 🔴 THE FIX 1: unknown added here
     const trigger = nodes.find(n => (n.data as unknown as AutomationNodeData).nodeType === 'trigger');
     const seqMap = new Map<string, number>();
+    
     if (trigger) {
+      let currentSeq = 1;
       const visited = new Set<string>();
-      const queue = [{ id: trigger.id, seq: 1 }];
-      while (queue.length) {
-        const { id, seq } = queue.shift()!;
-        if (visited.has(id)) continue;
-        visited.add(id);
-        seqMap.set(id, seq);
-        edges.filter(e => e.source === id).forEach(e => queue.push({ id: e.target, seq: seq + 1 }));
-      }
+      
+      // DFS (Depth-First Traversal) गारंटी देता है कि डुप्लीकेट नंबर कभी नहीं आएंगे
+      const traverse = (nodeId: string) => {
+        if (visited.has(nodeId)) return;
+        visited.add(nodeId);
+        seqMap.set(nodeId, currentSeq++);
+        
+        const outgoingEdges = edges.filter(e => e.source === nodeId);
+        outgoingEdges.forEach(e => traverse(e.target));
+      };
+      
+      traverse(trigger.id);
     }
+
     setNodes(prev =>
       prev.map(n => {
-        const newSeq = seqMap.get(n.id) ?? 0;
-        // 🔴 THE FIX 2: unknown added here
+        const newSeq = seqMap.get(n.id) ?? 0; // बिना तार वाले ब्लॉक्स को '—' (0) कर देगा
         if ((n.data as unknown as AutomationNodeData).sequence !== newSeq) {
           return { ...n, data: { ...n.data, sequence: newSeq } };
         }
@@ -909,13 +915,43 @@ const FlowCanvas = ({
   const onNodesChange = useCallback((changes: NodeChange[]) => setNodes(nds => applyNodeChanges(changes, nds)), [setNodes]);
   const onEdgesChange = useCallback((changes: EdgeChange[]) => setEdges(eds => applyEdgeChanges(changes, eds)), [setEdges]);
 
+  // 🔴 FIX 2: Smart Auto-Insert Logic (Edge Splitting)
   const onConnect = useCallback((params: Connection) => {
-    setEdges(eds => addEdge({
-      ...params,
-      type: 'orthogonal',
-      markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: 'hsl(var(--border))' },
-    }, eds));
-  }, [setEdges]);
+    if (!params.source || !params.target) return;
+
+    setEdges(eds => {
+      // चेक करो कि जिस ब्लॉक से तार आ रही है, क्या वो 'if_else' (Branch) है?
+      const sourceNode = nodes.find(n => n.id === params.source);
+      const isIfElse = (sourceNode?.data as unknown as AutomationNodeData)?.nodeType === 'if_else';
+
+      // चेक करो कि क्या इस ब्लॉक से पहले से कोई तार जुड़ी हुई है?
+      const existingEdge = eds.find(e => e.source === params.source);
+      let newEdges = eds;
+      
+      // अगर पहले से तार है और यह 'If/Else' नहीं है, तो "Auto-Insert" मैजिक चलाओ!
+      if (existingEdge && !isIfElse) {
+        // 1. पुरानी तार को हटाओ
+        newEdges = newEdges.filter(e => e.id !== existingEdge.id);
+        
+        // 2. नए घुसाए गए ब्लॉक को पुराने टार्गेट से जोड़ दो
+        const autoEdge: Edge = {
+          id: `e-${params.target}-${existingEdge.target}-${Date.now()}`,
+          source: params.target,
+          target: existingEdge.target,
+          type: 'orthogonal',
+          markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: 'hsl(var(--border))' },
+        };
+        newEdges.push(autoEdge);
+      }
+
+      // 3. यूज़र ने जो नई तार जोड़ी है, उसे जोड़ दो
+      return addEdge({
+        ...params,
+        type: 'orthogonal',
+        markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: 'hsl(var(--border))' },
+      }, newEdges);
+    });
+  }, [setEdges, nodes]);
 
   useOnSelectionChange({
     onChange: ({ nodes: sel }) => setSelectedNodeId(sel.length > 0 ? sel[0].id : null),
