@@ -22,8 +22,8 @@ import {
   GitBranch, RefreshCw, Download, Eye, Trash2, ChevronDown,
   Layers, Monitor,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { saveWorkflow } from '@/app/actions/workflows';
+import { useRouter, useSearchParams } from 'next/navigation'; // 🔴 useSearchParams joda gaya
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -741,9 +741,9 @@ export function WorkflowEditor() {
   const [workflowName, setWorkflowName] = useState('');
   const [workflowDesc, setWorkflowDesc] = useState('');
 
-  const workflowId = typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('id')
-    : null;
+  // 🔴 THE FIX: Next.js native hook for reading URL parameters dynamically
+  const searchParams = useSearchParams();
+  const workflowId = searchParams.get('id');
 
   useEffect(() => {
     if (!workflowId) return;

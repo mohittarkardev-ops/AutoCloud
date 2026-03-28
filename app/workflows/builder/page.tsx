@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button"
 import { LayoutDashboard, MonitorSmartphone, PlayCircle, Settings, Network } from "lucide-react"
 import Link from "next/link"
 import { WorkflowEditor } from "@/components/WorkflowEditor"
+import { Suspense } from "react" // 🔴 NAYA IMPORT
 
 export default function WorkflowsPage() {
   return (
@@ -53,7 +54,10 @@ export default function WorkflowsPage() {
 
         {/* React Flow Canvas Container */}
         <div className="flex-1 pb-8">
-           <WorkflowEditor />
+           {/* 🔴 THE FIX: Wrapped in Suspense so Next.js can resolve URL params dynamically */}
+           <Suspense fallback={<div className="flex items-center justify-center h-full"><p className="text-muted-foreground">Loading Builder...</p></div>}>
+             <WorkflowEditor />
+           </Suspense>
         </div>
       </main>
 
