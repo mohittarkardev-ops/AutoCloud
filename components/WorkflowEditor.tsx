@@ -365,6 +365,16 @@ const ConfigPanel = ({
   setAvailableColumns: (cols: string[]) => void;
 }) => {
   const [showPresets, setShowPresets] = useState(false);
+  
+  // 🔴 FIX 1: Local state for typing sequence without triggering update immediately
+  const [localSeq, setLocalSeq] = useState<string | number>('');
+
+  // 🔴 FIX 2: Sync local state when a new node is clicked
+  useEffect(() => {
+    if (selectedNode) {
+      setLocalSeq((selectedNode.data as unknown as AutomationNodeData).sequence || '');
+    }
+  }, [selectedNode]);
 
   if (!selectedNode) {
     return (
@@ -439,8 +449,17 @@ const ConfigPanel = ({
         <Field label="Step Number" hint="Execution order: lowest runs first (1, 2, 3…)">
           <input
             type="number" min={1}
-            value={d.sequence || ''}
-            onChange={e => updateNodeData(selectedNode.id, { sequence: parseInt(e.target.value) || 0 })}
+            value={localSeq}
+            onChange={e => setLocalSeq(e.target.value)} // 🔴 Sirf local type hoga
+            onBlur={e => {
+              // 🔴 OUTFOCUS: Bahar click karne par hi asol save hoga aur collision check hoga
+              const val = parseInt(e.target.value as string);
+              updateNodeData(selectedNode.id, { sequence: isNaN(val) ? 0 : val });
+            }}
+            onKeyDown={e => {
+              // 🔴 Enter dabane par bhi automatically outfocus ho jayega
+              if (e.key === 'Enter') e.currentTarget.blur();
+            }}
             className="cp-input font-bold text-blue-600 dark:text-blue-400"
             placeholder="e.g. 1"
           />
