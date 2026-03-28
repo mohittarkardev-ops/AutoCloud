@@ -19,7 +19,7 @@ import {
   Code, CheckSquare, ListFilter, FileSpreadsheet, CheckCircle2,
   Loader2, ShieldCheck, FileSearch, AlertCircle,
   GitBranch, RefreshCw, Download, Eye, ChevronDown,
-  Layers, Monitor,
+  Layers, Monitor, Info,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { saveWorkflow } from '@/app/actions/workflows';
@@ -43,11 +43,12 @@ interface NodeConfig {
   jsCode?: string;
   extractFields?: string;
   outputFile?: string;
-  checkAction?: 'check' | 'uncheck' | 'toggle';
+  // ── Checkbox / Toggle (updated) ──
+  checkAction?: 'ensure_checked' | 'ensure_unchecked' | 'toggle';
+  stateSelector?: string;   // optional: separate element that shows the real state
   fileName?: string;
   notes?: string;
   action?: string;
-  // ── NEW: per-block post-action wait (milliseconds) ──
   waitAfterMs?: number;
 }
 
@@ -63,56 +64,59 @@ interface AutomationNodeData {
 }
 
 // ─────────────────────────────────────────────
-// ICICI PRESETS (unchanged)
+// ICICI PRESETS
 // ─────────────────────────────────────────────
-const ICICI_PRESETS: Record<string, Array<{ label: string; selector?: string; value?: string; technique?: string; waitType?: string; waitTarget?: string; waitTimeout?: number }>> = {
+const ICICI_PRESETS: Record<string, Array<{
+  label: string; selector?: string; value?: string; technique?: string;
+  waitType?: string; waitTarget?: string; waitTimeout?: number;
+}>> = {
   type_text: [
-    { label: 'Registration No', selector: '#txtreg', technique: 'send_keys' },
-    { label: 'Engine Number', selector: "//input[@id='txtreg'][@placeholder='Engine Number']", technique: 'send_keys' },
-    { label: 'Chassis Number', selector: '#carreg', technique: 'send_keys' },
-    { label: 'TP Policy Number', selector: '#TPpolno', technique: 'send_keys' },
-    { label: 'SAOD Policy Number', selector: '#prevpolno', technique: 'send_keys' },
-    { label: 'Insured Name', selector: '#nameCstm', technique: 'send_keys' },
-    { label: 'Mobile Number', selector: '#mobile', technique: 'send_keys' },
-    { label: 'Email', selector: '#email', technique: 'send_keys' },
-    { label: 'Pincode', selector: '#pincode', technique: 'send_keys' },
-    { label: 'PAN Number', selector: '#pan_no', technique: 'native_setter' },
-    { label: 'Date of Birth (KYC)', selector: '#pan_dob', technique: 'native_setter' },
-    { label: 'IDV Value', selector: '#sirangeinput', technique: 'dispatch_event' },
-    { label: 'TP Start Date', selector: '#TPpolstartdate', technique: 'dispatch_event' },
-    { label: 'TP End Date', selector: '#TPpolenddate', technique: 'dispatch_event' },
-    { label: 'Non-Electrical Value', selector: "input[type='text'][id='NonElectricalAccessories']", technique: 'send_keys' },
+    { label: 'Registration No',         selector: '#txtreg',                                              technique: 'send_keys'      },
+    { label: 'Engine Number',           selector: "//input[@id='txtreg'][@placeholder='Engine Number']",  technique: 'send_keys'      },
+    { label: 'Chassis Number',          selector: '#carreg',                                              technique: 'send_keys'      },
+    { label: 'TP Policy Number',        selector: '#TPpolno',                                             technique: 'send_keys'      },
+    { label: 'SAOD Policy Number',      selector: '#prevpolno',                                           technique: 'send_keys'      },
+    { label: 'Insured Name',            selector: '#nameCstm',                                            technique: 'send_keys'      },
+    { label: 'Mobile Number',           selector: '#mobile',                                              technique: 'send_keys'      },
+    { label: 'Email',                   selector: '#email',                                               technique: 'send_keys'      },
+    { label: 'Pincode',                 selector: '#pincode',                                             technique: 'send_keys'      },
+    { label: 'PAN Number',              selector: '#pan_no',                                              technique: 'native_setter'  },
+    { label: 'Date of Birth (KYC)',     selector: '#pan_dob',                                             technique: 'native_setter'  },
+    { label: 'IDV Value',               selector: '#sirangeinput',                                        technique: 'dispatch_event' },
+    { label: 'TP Start Date',           selector: '#TPpolstartdate',                                      technique: 'dispatch_event' },
+    { label: 'TP End Date',             selector: '#TPpolenddate',                                        technique: 'dispatch_event' },
+    { label: 'Non-Electrical Value',    selector: "input[type='text'][id='NonElectricalAccessories']",    technique: 'send_keys'      },
   ],
   click: [
-    { label: 'Fetch Vehicle Details', selector: '#showHiddenForm', technique: 'js_click' },
-    { label: 'Get Quote Button', selector: '#get_quote', technique: 'standard_click' },
-    { label: 'Recalculate Button', selector: '#submit_quote', technique: 'standard_click' },
-    { label: 'Final Submit', selector: '#submit_quote', technique: 'js_click' },
-    { label: 'Create Proposal', selector: '#buypol', technique: 'js_click' },
-    { label: 'Complete KYC Radio', selector: "label[for='kycbtn']", technique: 'js_click' },
-    { label: 'Send Link Button', selector: "//span[normalize-space()='Send Link']", technique: 'js_click' },
-    { label: 'OK (SweetAlert Popup)', selector: 'button.swal2-confirm', technique: 'js_click' },
-    { label: 'Proceed (KYC Customer)', selector: '#arya_proceed_btn', technique: 'js_click' },
+    { label: 'Fetch Vehicle Details',   selector: '#showHiddenForm',                        technique: 'js_click'       },
+    { label: 'Get Quote Button',        selector: '#get_quote',                             technique: 'standard_click' },
+    { label: 'Recalculate Button',      selector: '#submit_quote',                          technique: 'standard_click' },
+    { label: 'Final Submit',            selector: '#submit_quote',                          technique: 'js_click'       },
+    { label: 'Create Proposal',         selector: '#buypol',                                technique: 'js_click'       },
+    { label: 'Complete KYC Radio',      selector: "label[for='kycbtn']",                    technique: 'js_click'       },
+    { label: 'Send Link Button',        selector: "//span[normalize-space()='Send Link']",  technique: 'js_click'       },
+    { label: 'OK (SweetAlert Popup)',   selector: 'button.swal2-confirm',                   technique: 'js_click'       },
+    { label: 'Proceed (KYC Customer)', selector: '#arya_proceed_btn',                       technique: 'js_click'       },
   ],
   select: [
-    { label: 'NCB → 0%', selector: "//select[.//option[text()='0%']]", value: '0', technique: 'native_select' },
-    { label: 'Zero Dep Plan → Silver', selector: '#zerodep', value: 'Silver', technique: 'native_select' },
-    { label: 'TP Insurer Name', selector: '#previnstp', technique: 'mat_autocomplete' },
-    { label: 'SAOD Insurer Name', selector: '#previns', technique: 'mat_autocomplete' },
+    { label: 'NCB → 0%',           selector: "//select[.//option[text()='0%']]", value: '0',      technique: 'native_select'    },
+    { label: 'Zero Dep → Silver',  selector: '#zerodep',                         value: 'Silver', technique: 'native_select'    },
+    { label: 'TP Insurer Name',    selector: '#previnstp',                                         technique: 'mat_autocomplete' },
+    { label: 'SAOD Insurer Name',  selector: '#previns',                                           technique: 'mat_autocomplete' },
   ],
   checkbox: [
-    { label: 'Standalone OD Toggle', selector: "label[for='switch']", technique: 'js_click' },
-    { label: 'Non-Electrical Accessories', selector: "label[for='NonElectricalAccessories']", technique: 'js_click' },
-    { label: 'Uncheck PA Cover', selector: '#scpaCoverSAOD1', technique: 'js_click' },
-    { label: 'Uncheck IL Smart Assist', selector: "label[for='ILSmartAssistPrime']", technique: 'js_click' },
-    { label: 'Zero Dep Checkbox', selector: "label[for='ZeroDepPlanName']", technique: 'js_click' },
+    { label: 'Standalone OD Toggle',        selector: "label[for='switch']",               technique: 'js_click' },
+    { label: 'Non-Electrical Accessories',  selector: "label[for='NonElectricalAccessories']", technique: 'js_click' },
+    { label: 'Uncheck PA Cover',            selector: '#scpaCoverSAOD1',                   technique: 'js_click' },
+    { label: 'Uncheck IL Smart Assist',     selector: "label[for='ILSmartAssistPrime']",   technique: 'js_click' },
+    { label: 'Zero Dep Checkbox',           selector: "label[for='ZeroDepPlanName']",      technique: 'js_click' },
   ],
   wait: [
-    { label: 'Wait for Quote Section', waitTarget: '#quotesection', waitType: 'element', waitTimeout: 20 },
-    { label: 'Wait for Backdrop to Hide', waitTarget: '.backdrop', waitType: 'hidden', waitTimeout: 15 },
-    { label: 'Wait for KYC Popup', waitTarget: '#pan_no', waitType: 'element', waitTimeout: 10 },
-    { label: 'Wait for Proposal Form', waitTarget: '#nameCstm', waitType: 'element', waitTimeout: 20 },
-    { label: 'Wait for Send Link Section', waitTarget: "//span[normalize-space()='Send Link']", waitType: 'element', waitTimeout: 30 },
+    { label: 'Wait for Quote Section',    waitTarget: '#quotesection',                        waitType: 'element', waitTimeout: 20 },
+    { label: 'Wait for Backdrop to Hide', waitTarget: '.backdrop',                            waitType: 'hidden',  waitTimeout: 15 },
+    { label: 'Wait for KYC Popup',        waitTarget: '#pan_no',                              waitType: 'element', waitTimeout: 10 },
+    { label: 'Wait for Proposal Form',    waitTarget: '#nameCstm',                            waitType: 'element', waitTimeout: 20 },
+    { label: 'Wait for Send Link',        waitTarget: "//span[normalize-space()='Send Link']", waitType: 'element', waitTimeout: 30 },
   ],
 };
 
@@ -120,23 +124,23 @@ const ICICI_PRESETS: Record<string, Array<{ label: string; selector?: string; va
 // NODE ICON RESOLVER
 // ─────────────────────────────────────────────
 const NodeIcon = ({ iName, size = 14 }: { iName: string; size?: number }) => {
-  const props = { size };
+  const p = { size };
   switch (iName) {
-    case 'Play': return <Play {...props} />;
-    case 'FileSpreadsheet': return <FileSpreadsheet {...props} />;
-    case 'Globe': return <Globe {...props} />;
-    case 'MousePointerClick': return <MousePointerClick {...props} />;
-    case 'Keyboard': return <Keyboard {...props} />;
-    case 'ListFilter': return <ListFilter {...props} />;
-    case 'CheckSquare': return <CheckSquare {...props} />;
-    case 'Timer': return <Timer {...props} />;
-    case 'Code': return <Code {...props} />;
-    case 'GitBranch': return <GitBranch {...props} />;
-    case 'RefreshCw': return <RefreshCw {...props} />;
-    case 'Download': return <Download {...props} />;
-    case 'Layers': return <Layers {...props} />;
-    case 'Monitor': return <Monitor {...props} />;
-    default: return <Play {...props} />;
+    case 'Play':             return <Play {...p} />;
+    case 'FileSpreadsheet': return <FileSpreadsheet {...p} />;
+    case 'Globe':           return <Globe {...p} />;
+    case 'MousePointerClick': return <MousePointerClick {...p} />;
+    case 'Keyboard':        return <Keyboard {...p} />;
+    case 'ListFilter':      return <ListFilter {...p} />;
+    case 'CheckSquare':     return <CheckSquare {...p} />;
+    case 'Timer':           return <Timer {...p} />;
+    case 'Code':            return <Code {...p} />;
+    case 'GitBranch':       return <GitBranch {...p} />;
+    case 'RefreshCw':       return <RefreshCw {...p} />;
+    case 'Download':        return <Download {...p} />;
+    case 'Layers':          return <Layers {...p} />;
+    case 'Monitor':         return <Monitor {...p} />;
+    default:                return <Play {...p} />;
   }
 };
 
@@ -145,40 +149,43 @@ const NodeIcon = ({ iName, size = 14 }: { iName: string; size?: number }) => {
 // ─────────────────────────────────────────────
 const catStyle = (category: string) => {
   switch (category) {
-    case 'trigger':  return { header: 'bg-green-500/8 border-b border-green-500/15',   icon: 'bg-green-500/15 text-green-600 dark:text-green-400' };
-    case 'action':   return { header: 'bg-blue-500/8 border-b border-blue-500/15',     icon: 'bg-blue-500/15 text-blue-600 dark:text-blue-400' };
-    case 'data':     return { header: 'bg-teal-500/8 border-b border-teal-500/15',     icon: 'bg-teal-500/15 text-teal-600 dark:text-teal-400' };
+    case 'trigger':  return { header: 'bg-green-500/8 border-b border-green-500/15',   icon: 'bg-green-500/15 text-green-600 dark:text-green-400'   };
+    case 'action':   return { header: 'bg-blue-500/8 border-b border-blue-500/15',     icon: 'bg-blue-500/15 text-blue-600 dark:text-blue-400'     };
+    case 'data':     return { header: 'bg-teal-500/8 border-b border-teal-500/15',     icon: 'bg-teal-500/15 text-teal-600 dark:text-teal-400'     };
     case 'logic':    return { header: 'bg-purple-500/8 border-b border-purple-500/15', icon: 'bg-purple-500/15 text-purple-600 dark:text-purple-400' };
-    case 'advanced': return { header: 'bg-amber-500/8 border-b border-amber-500/15',   icon: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' };
-    default:         return { header: 'bg-muted/50 border-b border-border',             icon: 'bg-muted text-muted-foreground' };
+    case 'advanced': return { header: 'bg-amber-500/8 border-b border-amber-500/15',   icon: 'bg-amber-500/15 text-amber-600 dark:text-amber-400'   };
+    default:         return { header: 'bg-muted/50 border-b border-border',             icon: 'bg-muted text-muted-foreground'                       };
   }
 };
 
-const statusRing = (status?: string) => {
-  switch (status) {
-    case 'running': return 'ring-2 ring-amber-400 ring-offset-1';
-    case 'success': return 'ring-2 ring-green-500 ring-offset-1';
-    case 'error':   return 'ring-2 ring-red-500 ring-offset-1';
-    default: return '';
-  }
+const statusRing = (s?: string) => {
+  if (s === 'running') return 'ring-2 ring-amber-400 ring-offset-1';
+  if (s === 'success') return 'ring-2 ring-green-500 ring-offset-1';
+  if (s === 'error')   return 'ring-2 ring-red-500 ring-offset-1';
+  return '';
 };
 
 // ─────────────────────────────────────────────
 // AUTOMATION NODE — No handles/wires
 // ─────────────────────────────────────────────
 const AutomationNode = ({ data, selected }: { data: AutomationNodeData; selected: boolean }) => {
-  const s = catStyle(data.category);
+  const s   = catStyle(data.category);
   const cfg = data.config || {};
 
   const getPreview = () => {
-    if (data.nodeType === 'open_url')      return cfg.url || 'No URL set';
-    if (data.nodeType === 'loop_excel')    return cfg.fileName || 'No file mapped';
+    if (data.nodeType === 'open_url')      return cfg.url           || 'No URL set';
+    if (data.nodeType === 'loop_excel')    return cfg.fileName      || 'No file mapped';
     if (data.nodeType === 'type_text')     return cfg.selector ? `${cfg.selector} → ${(cfg.value || '').substring(0, 18)}` : 'No selector';
-    if (data.nodeType === 'click')         return cfg.selector || 'No selector';
+    if (data.nodeType === 'click')         return cfg.selector      || 'No selector';
     if (data.nodeType === 'select')        return cfg.selector ? `${cfg.selector} → ${cfg.value || '?'}` : 'No selector';
-    if (data.nodeType === 'checkbox')      return cfg.selector || 'No selector';
+    if (data.nodeType === 'checkbox') {
+      const actionLabel =
+        cfg.checkAction === 'ensure_checked'   ? '✓ Ensure ON'  :
+        cfg.checkAction === 'ensure_unchecked' ? '✗ Ensure OFF' : '⇄ Toggle';
+      return cfg.selector ? `${actionLabel} · ${cfg.selector}` : actionLabel;
+    }
     if (data.nodeType === 'wait')          return cfg.waitType === 'time' ? `Wait ${cfg.waitTimeout}s` : (cfg.waitTarget || 'No target');
-    if (data.nodeType === 'if_else')       return cfg.condition || 'No condition';
+    if (data.nodeType === 'if_else')       return cfg.condition     || 'No condition';
     if (data.nodeType === 'loop')          return `Repeat ${cfg.loopCount || 3} times`;
     if (data.nodeType === 'js_inject')     return cfg.jsCode ? cfg.jsCode.substring(0, 28) + '…' : 'No code';
     if (data.nodeType === 'extract')       return cfg.extractFields ? cfg.extractFields.split('\n')[0] : 'No fields';
@@ -189,8 +196,7 @@ const AutomationNode = ({ data, selected }: { data: AutomationNodeData; selected
   };
 
   const techBadge = cfg.technique && !['send_keys', 'standard_click', 'standard'].includes(cfg.technique)
-    ? cfg.technique.replace('_', ' ')
-    : null;
+    ? cfg.technique.replace('_', ' ') : null;
 
   return (
     <div className={`
@@ -198,7 +204,7 @@ const AutomationNode = ({ data, selected }: { data: AutomationNodeData; selected
       ${selected ? 'border-primary shadow-md shadow-primary/10' : 'border-border hover:border-border/80 hover:shadow-md'}
       ${statusRing(data.status)}
     `}>
-      {/* ── HEADER ── */}
+      {/* Header */}
       <div className={`px-3 py-2.5 flex items-center gap-2.5 ${s.header}`}>
         <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${s.icon}`}>
           <NodeIcon iName={data.iName} size={13} />
@@ -207,7 +213,6 @@ const AutomationNode = ({ data, selected }: { data: AutomationNodeData; selected
           <div className="text-[12px] font-semibold leading-none truncate">{data.label}</div>
           <div className="text-[10px] text-muted-foreground mt-0.5">{data.subline}</div>
         </div>
-        {/* Step Number Badge */}
         <div className={`min-w-[22px] h-[22px] rounded-full px-1.5 flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
           data.sequence > 0
             ? 'bg-foreground text-background'
@@ -217,7 +222,7 @@ const AutomationNode = ({ data, selected }: { data: AutomationNodeData; selected
         </div>
       </div>
 
-      {/* ── BODY ── */}
+      {/* Body */}
       <div className="px-3 py-2 space-y-1.5">
         <div className="bg-muted/60 rounded-md px-2 py-1 text-[10px] font-mono text-muted-foreground truncate border border-border/40">
           {getPreview()}
@@ -225,21 +230,18 @@ const AutomationNode = ({ data, selected }: { data: AutomationNodeData; selected
 
         <div className="flex items-center gap-1.5 flex-wrap">
           {techBadge && (
-            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
-              {techBadge}
-            </span>
+            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">{techBadge}</span>
           )}
           {(cfg.retries ?? 0) > 0 && (
-            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400">
-              ↺ {cfg.retries}x
-            </span>
+            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400">↺ {cfg.retries}x</span>
           )}
           {cfg.onError === 'continue' && (
-            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400">
-              skip-on-fail
-            </span>
+            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400">skip-on-fail</span>
           )}
-          {/* Wait-after badge */}
+          {/* State-aware badge for checkbox */}
+          {data.nodeType === 'checkbox' && cfg.checkAction !== 'toggle' && (
+            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">state-aware</span>
+          )}
           {(cfg.waitAfterMs ?? 0) > 0 && (
             <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center gap-0.5">
               <Timer size={8} /> +{cfg.waitAfterMs}ms
@@ -250,9 +252,7 @@ const AutomationNode = ({ data, selected }: { data: AutomationNodeData; selected
               data.status === 'running' ? 'bg-amber-500/10 text-amber-600' :
               data.status === 'success' ? 'bg-green-500/10 text-green-600' :
               'bg-red-500/10 text-red-600'
-            }`}>
-              {data.status}
-            </span>
+            }`}>{data.status}</span>
           )}
         </div>
       </div>
@@ -264,51 +264,49 @@ const nodeTypes = { automation: AutomationNode };
 const getId = () => `node_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
 // ─────────────────────────────────────────────
-// JSON EXPORT BUILDER (no edges)
+// JSON EXPORT BUILDER
 // ─────────────────────────────────────────────
 function buildWorkflowJSON(nodes: Node[]) {
   const allColumns = new Set<string>();
 
-  // Sort by manual sequence number, skip unset (0)
   const ordered = [...nodes]
     .filter(n => (n.data as unknown as AutomationNodeData).sequence > 0)
     .sort((a, b) => {
-      const seqA = (a.data as unknown as AutomationNodeData).sequence;
-      const seqB = (b.data as unknown as AutomationNodeData).sequence;
-      return seqA - seqB;
+      const sa = (a.data as unknown as AutomationNodeData).sequence;
+      const sb = (b.data as unknown as AutomationNodeData).sequence;
+      return sa - sb;
     });
 
   const extractCols = (str: string) => {
     if (!str) return;
-    const matches = str.matchAll(/\{\{([^}]+)\}\}/g);
-    for (const m of matches) allColumns.add(m[1]);
+    for (const m of str.matchAll(/\{\{([^}]+)\}\}/g)) allColumns.add(m[1]);
   };
 
-  const steps = ordered.map((node, idx) => {
+  const steps = ordered.map((node) => {
     const d = node.data as unknown as AutomationNodeData;
     const c = d.config || {};
 
     const base = {
-      sequence: d.sequence,
-      id: node.id,
-      type: d.nodeType,
-      label: d.label,
-      notes: c.notes || '',
-      wait_after_ms: c.waitAfterMs ?? 0,   // ← NEW FIELD
+      sequence:      d.sequence,
+      id:            node.id,
+      type:          d.nodeType,
+      label:         d.label,
+      notes:         c.notes || '',
+      wait_after_ms: c.waitAfterMs ?? 0,
       error_handling: {
-        on_error: c.onError || 'stop',
-        retries: Number(c.retries ?? 0),
+        on_error:       c.onError || 'stop',
+        retries:        Number(c.retries ?? 0),
         retry_delay_ms: Number(c.retryDelay ?? 1000),
       },
     };
 
-    if (d.nodeType === 'trigger') return base;
-    if (d.nodeType === 'open_url') return { ...base, url: c.url };
-    if (d.nodeType === 'loop_excel') return { ...base, file: c.fileName || '[provided_by_runner]', columns: [] };
-    if (d.nodeType === 'extract') return { ...base, fields: c.extractFields, output_file: c.outputFile };
-    if (d.nodeType === 'wait') return { ...base, wait_type: c.waitType, target: c.waitTarget, timeout_seconds: Number(c.waitTimeout ?? 10) };
-    if (d.nodeType === 'if_else') return { ...base, condition: c.condition };
-    if (d.nodeType === 'loop') return { ...base, repeat: Number(c.loopCount ?? 3) };
+    if (d.nodeType === 'trigger')     return base;
+    if (d.nodeType === 'open_url')    return { ...base, url: c.url };
+    if (d.nodeType === 'loop_excel')  return { ...base, file: c.fileName || '[provided_by_runner]', columns: [] };
+    if (d.nodeType === 'extract')     return { ...base, fields: c.extractFields, output_file: c.outputFile };
+    if (d.nodeType === 'wait')        return { ...base, wait_type: c.waitType, target: c.waitTarget, timeout_seconds: Number(c.waitTimeout ?? 10) };
+    if (d.nodeType === 'if_else')     return { ...base, condition: c.condition };
+    if (d.nodeType === 'loop')        return { ...base, repeat: Number(c.loopCount ?? 3) };
     if (d.nodeType === 'js_inject') {
       extractCols(c.jsCode || '');
       return { ...base, code: c.jsCode, excel_columns_used: Array.from(allColumns) };
@@ -317,16 +315,25 @@ function buildWorkflowJSON(nodes: Node[]) {
     if (d.nodeType === 'switch_tab')    return { ...base, action: c.action || 'next' };
     if (d.nodeType === 'press_key')     return { ...base, value: c.value || 'ENTER', selector: c.selector };
 
-    if (['type_text', 'click', 'select', 'checkbox'].includes(d.nodeType)) {
+    if (d.nodeType === 'checkbox') {
+      return {
+        ...base,
+        selector:       c.selector,
+        action:         c.checkAction || 'ensure_checked',  // engine reads this field
+        state_selector: c.stateSelector || '',              // optional separate state element
+        technique:      c.technique,
+      };
+    }
+
+    if (['type_text', 'click', 'select'].includes(d.nodeType)) {
       extractCols(c.value || '');
       const colsUsed: string[] = [];
       (c.value || '').replace(/\{\{([^}]+)\}\}/g, (_, m) => { colsUsed.push(m); return ''; });
       return {
         ...base,
-        selector: c.selector,
-        value: c.value,
+        selector:  c.selector,
+        value:     c.value,
         technique: c.technique,
-        ...(d.nodeType === 'checkbox' ? { action: c.checkAction } : {}),
         ...(d.nodeType === 'select' && c.technique === 'mat_autocomplete' ? { search_first_n_words: 2 } : {}),
         excel_columns_used: Array.from(new Set(colsUsed)),
       };
@@ -336,10 +343,10 @@ function buildWorkflowJSON(nodes: Node[]) {
 
   return {
     meta: {
-      workflow_version: '2.0',
-      execution_mode: 'sequential_by_step_number',
-      created: new Date().toISOString(),
-      total_steps: steps.length,
+      workflow_version:  '2.0',
+      execution_mode:    'sequential_by_step_number',
+      created:           new Date().toISOString(),
+      total_steps:       steps.length,
       excel_columns_required: Array.from(allColumns),
     },
     steps,
@@ -350,10 +357,7 @@ function buildWorkflowJSON(nodes: Node[]) {
 // CONFIG PANEL
 // ─────────────────────────────────────────────
 const ConfigPanel = ({
-  selectedNode,
-  updateNodeData,
-  availableColumns,
-  setAvailableColumns,
+  selectedNode, updateNodeData, availableColumns, setAvailableColumns,
 }: {
   selectedNode: Node | null;
   updateNodeData: (id: string, data: Partial<AutomationNodeData>) => void;
@@ -372,48 +376,44 @@ const ConfigPanel = ({
     );
   }
 
-  const d = selectedNode.data as unknown as AutomationNodeData;
+  const d   = selectedNode.data as unknown as AutomationNodeData;
   const cfg = d.config || {};
 
-  const updateCfg = (key: keyof NodeConfig, value: unknown) => {
+  const updateCfg   = (key: keyof NodeConfig, value: unknown) =>
     updateNodeData(selectedNode.id, { config: { ...cfg, [key]: value } });
-  };
   const updateLabel = (label: string) => updateNodeData(selectedNode.id, { label });
 
   const handleLocalFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = (ev) => {
       try {
-        const data = new Uint8Array(event.target?.result as ArrayBuffer);
+        const data     = new Uint8Array(ev.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: 'array' });
-        const ws = workbook.Sheets[workbook.SheetNames[0]];
+        const ws       = workbook.Sheets[workbook.SheetNames[0]];
         const jsonData = XLSX.utils.sheet_to_json(ws, { header: 1 }) as string[][];
-        const headers = (jsonData[0] || []).filter(h => h && String(h).trim() !== '');
+        const headers  = (jsonData[0] || []).filter(h => h && String(h).trim() !== '');
         setAvailableColumns(headers);
         updateCfg('fileName', file.name);
-      } catch {
-        alert('Could not read Excel file. Ensure it is a valid .xlsx or .csv file.');
-      }
+      } catch { alert('Could not read Excel file.'); }
     };
     reader.readAsArrayBuffer(file);
   };
 
   const applyPreset = (preset: (typeof ICICI_PRESETS)[string][number]) => {
-    if (preset.selector  !== undefined) updateCfg('selector',   preset.selector);
-    if (preset.value     !== undefined) updateCfg('value',      preset.value);
-    if (preset.technique)               updateCfg('technique',  preset.technique as never);
-    if (preset.waitTarget)              updateCfg('waitTarget', preset.waitTarget);
-    if (preset.waitType)                updateCfg('waitType',   preset.waitType as never);
-    if (preset.waitTimeout)             updateCfg('waitTimeout',preset.waitTimeout);
+    if (preset.selector   !== undefined) updateCfg('selector',   preset.selector);
+    if (preset.value      !== undefined) updateCfg('value',      preset.value);
+    if (preset.technique)                updateCfg('technique',  preset.technique as never);
+    if (preset.waitTarget)               updateCfg('waitTarget', preset.waitTarget);
+    if (preset.waitType)                 updateCfg('waitType',   preset.waitType as never);
+    if (preset.waitTimeout)              updateCfg('waitTimeout',preset.waitTimeout);
     setShowPresets(false);
   };
 
   const insertColumn = (col: string) => updateCfg('value', (cfg.value || '') + `{{${col}}}`);
-
-  const hasPresets = ICICI_PRESETS[d.nodeType];
-  const s = catStyle(d.category);
+  const hasPresets   = ICICI_PRESETS[d.nodeType];
+  const s            = catStyle(d.category);
 
   return (
     <aside className="w-[290px] border-l bg-card flex flex-col h-full overflow-hidden flex-shrink-0">
@@ -432,19 +432,13 @@ const ConfigPanel = ({
 
         {/* Block Name */}
         <Field label="Block Name">
-          <input
-            type="text"
-            value={d.label}
-            onChange={e => updateLabel(e.target.value)}
-            className="cp-input"
-          />
+          <input type="text" value={d.label} onChange={e => updateLabel(e.target.value)} className="cp-input" />
         </Field>
 
         {/* Step Number */}
-        <Field label="Step Number" hint="Execution order. Steps run lowest → highest (1, 2, 3…)">
+        <Field label="Step Number" hint="Execution order: lowest runs first (1, 2, 3…)">
           <input
-            type="number"
-            min={1}
+            type="number" min={1}
             value={d.sequence || ''}
             onChange={e => updateNodeData(selectedNode.id, { sequence: parseInt(e.target.value) || 0 })}
             className="cp-input font-bold text-blue-600 dark:text-blue-400"
@@ -452,38 +446,28 @@ const ConfigPanel = ({
           />
         </Field>
 
-        {/* ── WAIT AFTER (every non-trigger block) ── */}
+        {/* Wait After */}
         {d.nodeType !== 'trigger' && (
           <div className="bg-sky-500/5 border border-sky-500/15 rounded-lg p-3 space-y-2">
             <p className="text-[10px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400 flex items-center gap-1.5">
               <Timer size={11} /> Wait After This Step
             </p>
-            <Field label="Delay (milliseconds)" hint="Engine waits this long after step completes. 0 = no extra wait.">
+            <Field label="Delay (milliseconds)" hint="0 = no extra wait after this step.">
               <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  step={100}
-                  value={cfg.waitAfterMs ?? 0}
+                <input type="number" min={0} step={100} value={cfg.waitAfterMs ?? 0}
                   onChange={e => updateCfg('waitAfterMs', Number(e.target.value))}
-                  className="cp-input"
-                  placeholder="0"
-                />
+                  className="cp-input" placeholder="0" />
                 <span className="text-[10px] text-muted-foreground whitespace-nowrap">ms</span>
               </div>
             </Field>
-            {/* Quick preset buttons */}
             <div className="flex flex-wrap gap-1">
               {[0, 500, 1000, 2000, 3000].map(ms => (
-                <button
-                  key={ms}
-                  onClick={() => updateCfg('waitAfterMs', ms)}
+                <button key={ms} onClick={() => updateCfg('waitAfterMs', ms)}
                   className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${
                     (cfg.waitAfterMs ?? 0) === ms
                       ? 'bg-sky-500/20 border-sky-500/40 text-sky-700 dark:text-sky-300'
                       : 'border-border text-muted-foreground hover:border-sky-500/30 hover:text-sky-600'
-                  }`}
-                >
+                  }`}>
                   {ms === 0 ? 'None' : `${ms}ms`}
                 </button>
               ))}
@@ -491,7 +475,7 @@ const ConfigPanel = ({
           </div>
         )}
 
-        {/* ── ERROR HANDLING ── */}
+        {/* Error Handling */}
         {d.nodeType !== 'trigger' && (
           <div className="bg-red-500/5 border border-red-500/15 rounded-lg p-3 space-y-3">
             <p className="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400 flex items-center gap-1.5">
@@ -506,32 +490,32 @@ const ConfigPanel = ({
                 </select>
               </Field>
               <Field label="Retries">
-                <input type="number" min={0} max={10} className="cp-input" value={cfg.retries ?? 2} onChange={e => updateCfg('retries', Number(e.target.value))} />
+                <input type="number" min={0} max={10} className="cp-input" value={cfg.retries ?? 2}
+                  onChange={e => updateCfg('retries', Number(e.target.value))} />
               </Field>
             </div>
             <Field label="Retry delay (ms)">
-              <input type="number" step={500} min={0} className="cp-input" value={cfg.retryDelay ?? 1000} onChange={e => updateCfg('retryDelay', Number(e.target.value))} />
+              <input type="number" step={500} min={0} className="cp-input" value={cfg.retryDelay ?? 1000}
+                onChange={e => updateCfg('retryDelay', Number(e.target.value))} />
             </Field>
           </div>
         )}
 
         <div className="border-t border-border/50" />
 
-        {/* ── ICICI PRESETS ── */}
+        {/* ICICI Presets */}
         {hasPresets && (
           <div>
-            <button
-              onClick={() => setShowPresets(v => !v)}
-              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border border-dashed border-border text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/50 hover:border-border/80 transition-all"
-            >
-              <FileSearch size={12} />
-              Load ICICI Preset
+            <button onClick={() => setShowPresets(v => !v)}
+              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border border-dashed border-border text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/50 hover:border-border/80 transition-all">
+              <FileSearch size={12} /> Load ICICI Preset
               <ChevronDown size={11} className={`ml-auto transition-transform ${showPresets ? 'rotate-180' : ''}`} />
             </button>
             {showPresets && (
               <div className="mt-1.5 border border-border rounded-lg overflow-hidden shadow-sm">
                 {ICICI_PRESETS[d.nodeType].map((p, i) => (
-                  <button key={i} onClick={() => applyPreset(p)} className="w-full text-left px-3 py-2 border-b border-border last:border-0 hover:bg-primary/5 transition-colors">
+                  <button key={i} onClick={() => applyPreset(p)}
+                    className="w-full text-left px-3 py-2 border-b border-border last:border-0 hover:bg-primary/5 transition-colors">
                     <div className="text-[11px] font-medium">{p.label}</div>
                     {p.selector && <div className="text-[10px] text-muted-foreground font-mono truncate">{p.selector}</div>}
                   </button>
@@ -541,27 +525,24 @@ const ConfigPanel = ({
           </div>
         )}
 
-        {/* ── OPEN URL ── */}
+        {/* Open URL */}
         {d.nodeType === 'open_url' && (
           <Field label="Website URL">
-            <input type="text" placeholder="https://…" value={cfg.url || ''} onChange={e => updateCfg('url', e.target.value)} className="cp-input" />
+            <input type="text" placeholder="https://…" value={cfg.url || ''}
+              onChange={e => updateCfg('url', e.target.value)} className="cp-input" />
           </Field>
         )}
 
-        {/* ── SELECTOR ── */}
-        {['type_text', 'click', 'select', 'checkbox'].includes(d.nodeType) && (
+        {/* Selector — shared by interaction nodes (NOT checkbox, handled separately) */}
+        {['type_text', 'click', 'select'].includes(d.nodeType) && (
           <Field label="Target Selector" hint="CSS selector or XPath">
-            <input
-              type="text"
-              placeholder="e.g. #txtreg or //input[@id='carreg']"
-              value={cfg.selector || ''}
-              onChange={e => updateCfg('selector', e.target.value)}
-              className="cp-input font-mono text-[11px]"
-            />
+            <input type="text" placeholder="e.g. #txtreg or //input[@id='carreg']"
+              value={cfg.selector || ''} onChange={e => updateCfg('selector', e.target.value)}
+              className="cp-input font-mono text-[11px]" />
           </Field>
         )}
 
-        {/* ── VALUE ── */}
+        {/* Value */}
         {['type_text', 'select'].includes(d.nodeType) && (
           <Field label="Value">
             {availableColumns.length > 0 && (
@@ -574,12 +555,8 @@ const ConfigPanel = ({
                 ))}
               </div>
             )}
-            <textarea
-              placeholder={availableColumns.length > 0 ? 'Type value or click a column chip above…' : 'Type value or add a Loop Excel block to map columns…'}
-              value={cfg.value || ''}
-              onChange={e => updateCfg('value', e.target.value)}
-              className="cp-textarea"
-            />
+            <textarea placeholder={availableColumns.length > 0 ? 'Type value or click a column chip…' : 'Type value or add a Loop Excel block…'}
+              value={cfg.value || ''} onChange={e => updateCfg('value', e.target.value)} className="cp-textarea" />
             {availableColumns.length === 0 && (
               <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-1">
                 <AlertCircle size={10} /> Add a Loop Excel block to map dynamic data.
@@ -588,18 +565,68 @@ const ConfigPanel = ({
           </Field>
         )}
 
-        {/* ── CHECKBOX ACTION ── */}
+        {/* ── CHECKBOX / TOGGLE — full smart UI ── */}
         {d.nodeType === 'checkbox' && (
-          <Field label="Action">
-            <select className="cp-select" value={cfg.checkAction || 'toggle'} onChange={e => updateCfg('checkAction', e.target.value as never)}>
-              <option value="check">Check (enable)</option>
-              <option value="uncheck">Uncheck (disable)</option>
-              <option value="toggle">Toggle state</option>
-            </select>
-          </Field>
+          <div className="space-y-3">
+
+            {/* Click target selector */}
+            <Field label="Click Target (selector)" hint="Element to click — can be a <label> or the input itself">
+              <input type="text" placeholder="e.g. label[for='switch'] or #myCheckbox"
+                value={cfg.selector || ''} onChange={e => updateCfg('selector', e.target.value)}
+                className="cp-input font-mono text-[11px]" />
+            </Field>
+
+            {/* Action */}
+            <Field label="Desired Action">
+              <div className="grid grid-cols-1 gap-1.5">
+                {([
+                  { value: 'ensure_checked',   icon: '✅', title: 'Ensure ON (check)',   desc: 'Clicks only if currently OFF — safe in loops' },
+                  { value: 'ensure_unchecked', icon: '⬜', title: 'Ensure OFF (uncheck)', desc: 'Clicks only if currently ON — safe in loops'  },
+                  { value: 'toggle',           icon: '⇄',  title: 'Always Toggle',        desc: 'Clicks unconditionally — use when you always want to flip' },
+                ] as const).map(opt => (
+                  <button key={opt.value} onClick={() => updateCfg('checkAction', opt.value)}
+                    className={`text-left px-3 py-2 rounded-lg border transition-all ${
+                      (cfg.checkAction || 'ensure_checked') === opt.value
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-border/80 hover:bg-muted/40'
+                    }`}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{opt.icon}</span>
+                      <span className="text-[11px] font-semibold">{opt.title}</span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5 ml-6">{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </Field>
+
+            {/* State Selector (advanced — only shown for ensure_* modes) */}
+            {(cfg.checkAction || 'ensure_checked') !== 'toggle' && (
+              <div className="bg-indigo-500/5 border border-indigo-500/15 rounded-lg p-3 space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                  <Info size={11} /> State Element (optional)
+                </p>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  For custom toggles like <code className="bg-muted px-1 rounded">label[for=&apos;switch&apos;]</code>, the
+                  engine reads state from the <b>hidden input</b>, not the label.
+                  If left blank, state is read from the click-target itself.
+                </p>
+                <Field label="State Selector" hint="Separate element that holds the true checked state (e.g. the hidden input behind a label)">
+                  <input type="text" placeholder="e.g. #switch or input[name='od_toggle']"
+                    value={cfg.stateSelector || ''}
+                    onChange={e => updateCfg('stateSelector', e.target.value)}
+                    className="cp-input font-mono text-[11px]" />
+                </Field>
+                <div className="bg-indigo-500/8 rounded-md p-2 text-[10px] text-indigo-700 dark:text-indigo-300 leading-relaxed">
+                  <b>How it works:</b> Engine checks state via (in order):
+                  <span className="font-mono"> is_selected() → aria-checked → aria-pressed → CSS class → JS .checked → data-* attrs</span>
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
-        {/* ── INJECTION TECHNIQUE ── */}
+        {/* Injection Technique — for interaction nodes */}
         {['type_text', 'click', 'select', 'checkbox'].includes(d.nodeType) && (
           <div className="space-y-2 pt-1 border-t border-border/50">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground pt-1">Injection Technique</p>
@@ -607,17 +634,20 @@ const ConfigPanel = ({
           </div>
         )}
 
-        {/* ── LOOP EXCEL ── */}
+        {/* Loop Excel */}
         {d.nodeType === 'loop_excel' && (
           <div className="bg-teal-500/5 border border-teal-500/15 rounded-lg p-3 space-y-2">
             <div className="flex items-center gap-1.5 text-teal-700 dark:text-teal-400">
               <ShieldCheck size={12} />
               <p className="text-[10px] font-bold uppercase tracking-tight">Local Mapping Mode</p>
             </div>
-            <p className="text-[10px] text-muted-foreground leading-relaxed">Select your Excel file to extract column headers. The file is <b>NOT</b> uploaded — only headers are read locally.</p>
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              Select your Excel file to extract column headers. The file is <b>NOT</b> uploaded — only headers are read locally.
+            </p>
             <div>
               <input type="file" accept=".xlsx,.xls,.csv" onChange={handleLocalFileSelect} className="hidden" id="local-excel-mapper" />
-              <label htmlFor="local-excel-mapper" className="flex items-center justify-center gap-2 w-full py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold rounded-md cursor-pointer transition-colors">
+              <label htmlFor="local-excel-mapper"
+                className="flex items-center justify-center gap-2 w-full py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold rounded-md cursor-pointer transition-colors">
                 <FileSearch size={12} /> Select Sample File
               </label>
             </div>
@@ -633,7 +663,7 @@ const ConfigPanel = ({
           </div>
         )}
 
-        {/* ── WAIT ── */}
+        {/* Wait */}
         {d.nodeType === 'wait' && (
           <>
             <Field label="Wait Type">
@@ -645,59 +675,65 @@ const ConfigPanel = ({
               </select>
             </Field>
             <Field label="Selector / URL keyword" hint="CSS, XPath, or URL fragment">
-              <input type="text" placeholder="#selector or keyword" value={cfg.waitTarget || ''} onChange={e => updateCfg('waitTarget', e.target.value)} className="cp-input font-mono text-[11px]" />
+              <input type="text" placeholder="#selector or keyword" value={cfg.waitTarget || ''}
+                onChange={e => updateCfg('waitTarget', e.target.value)} className="cp-input font-mono text-[11px]" />
             </Field>
             <Field label="Timeout (seconds)">
-              <input type="number" min={1} max={120} value={cfg.waitTimeout ?? 10} onChange={e => updateCfg('waitTimeout', Number(e.target.value))} className="cp-input" />
+              <input type="number" min={1} max={120} value={cfg.waitTimeout ?? 10}
+                onChange={e => updateCfg('waitTimeout', Number(e.target.value))} className="cp-input" />
             </Field>
           </>
         )}
 
-        {/* ── IF / ELSE ── */}
+        {/* If / Else */}
         {d.nodeType === 'if_else' && (
           <Field label="Condition" hint="e.g. element_exists #popup-ok">
-            <input type="text" placeholder="element_exists #selector" value={cfg.condition || ''} onChange={e => updateCfg('condition', e.target.value)} className="cp-input font-mono text-[11px]" />
+            <input type="text" placeholder="element_exists #selector" value={cfg.condition || ''}
+              onChange={e => updateCfg('condition', e.target.value)} className="cp-input font-mono text-[11px]" />
             <p className="text-[10px] text-muted-foreground mt-1">
-              Supported: <code className="bg-muted px-1 rounded">element_exists</code>, <code className="bg-muted px-1 rounded">url_contains</code>, <code className="bg-muted px-1 rounded">text_contains</code>
+              Supported: <code className="bg-muted px-1 rounded">element_exists</code>{' '}
+              <code className="bg-muted px-1 rounded">url_contains</code>{' '}
+              <code className="bg-muted px-1 rounded">text_contains</code>
             </p>
           </Field>
         )}
 
-        {/* ── LOOP N TIMES ── */}
+        {/* Loop N Times */}
         {d.nodeType === 'loop' && (
           <Field label="Repeat Count">
-            <input type="number" min={1} max={999} value={cfg.loopCount ?? 3} onChange={e => updateCfg('loopCount', Number(e.target.value))} className="cp-input" />
+            <input type="number" min={1} max={999} value={cfg.loopCount ?? 3}
+              onChange={e => updateCfg('loopCount', Number(e.target.value))} className="cp-input" />
           </Field>
         )}
 
-        {/* ── JS INJECTION ── */}
+        {/* JS Injection */}
         {d.nodeType === 'js_inject' && (
           <Field label={<>JavaScript Code <span className="ml-1 text-[9px] bg-amber-500/10 text-amber-600 px-1.5 py-0.5 rounded-full font-bold">ADVANCED</span></>}>
-            <textarea
-              value={cfg.jsCode || ''}
-              onChange={e => updateCfg('jsCode', e.target.value)}
-              placeholder={"// Use {{ColumnName}} for Excel data\ndocument.getElementById('txtreg').value = '{{Registration No}}';\ndocument.getElementById('txtreg').dispatchEvent(new Event('input', {bubbles:true}));"}
-              className="cp-textarea min-h-[120px]"
-            />
+            <textarea value={cfg.jsCode || ''} onChange={e => updateCfg('jsCode', e.target.value)}
+              placeholder={"// Use {{ColumnName}} for Excel data\ndocument.getElementById('txtreg').value = '{{Registration No}}';\n..."}
+              className="cp-textarea min-h-[120px]" />
             <p className="text-[10px] text-muted-foreground mt-1">
               Use <code className="bg-muted px-1 rounded">{'{{ColumnName}}'}</code> to inject Excel values
             </p>
           </Field>
         )}
 
-        {/* ── EXTRACT ── */}
+        {/* Extract */}
         {d.nodeType === 'extract' && (
           <>
             <Field label="Fields to Extract" hint="Format: Label: #selector — one per line">
-              <textarea value={cfg.extractFields || ''} onChange={e => updateCfg('extractFields', e.target.value)} placeholder={"Premium: #premium-amount\nQuote No: .quote-id\nPolicy Date: #pol-date"} className="cp-textarea min-h-[90px]" />
+              <textarea value={cfg.extractFields || ''} onChange={e => updateCfg('extractFields', e.target.value)}
+                placeholder={"Premium: #premium-amount\nQuote No: .quote-id\nPolicy Date: #pol-date"}
+                className="cp-textarea min-h-[90px]" />
             </Field>
             <Field label="Output filename">
-              <input type="text" placeholder="results.xlsx" value={cfg.outputFile || 'results.xlsx'} onChange={e => updateCfg('outputFile', e.target.value)} className="cp-input" />
+              <input type="text" placeholder="results.xlsx" value={cfg.outputFile || 'results.xlsx'}
+                onChange={e => updateCfg('outputFile', e.target.value)} className="cp-input" />
             </Field>
           </>
         )}
 
-        {/* ── SWITCH IFRAME ── */}
+        {/* Switch Iframe */}
         {d.nodeType === 'switch_iframe' && (
           <>
             <Field label="Action">
@@ -708,13 +744,14 @@ const ConfigPanel = ({
             </Field>
             {cfg.action !== 'exit' && (
               <Field label="Iframe Selector" hint="CSS selector or XPath for the iframe element">
-                <input type="text" placeholder="e.g. #my-iframe or iframe.modal-frame" value={cfg.selector || ''} onChange={e => updateCfg('selector', e.target.value)} className="cp-input font-mono text-[11px]" />
+                <input type="text" placeholder="e.g. #my-iframe" value={cfg.selector || ''}
+                  onChange={e => updateCfg('selector', e.target.value)} className="cp-input font-mono text-[11px]" />
               </Field>
             )}
           </>
         )}
 
-        {/* ── SWITCH TAB ── */}
+        {/* Switch Tab */}
         {d.nodeType === 'switch_tab' && (
           <Field label="Action">
             <select className="cp-select" value={cfg.action || 'next'} onChange={e => updateCfg('action', e.target.value)}>
@@ -726,7 +763,7 @@ const ConfigPanel = ({
           </Field>
         )}
 
-        {/* ── PRESS KEY ── */}
+        {/* Press Key */}
         {d.nodeType === 'press_key' && (
           <>
             <Field label="Key to Press">
@@ -741,7 +778,8 @@ const ConfigPanel = ({
               </select>
             </Field>
             <Field label="Target Selector (Optional)" hint="Leave blank to press on active element">
-              <input type="text" placeholder="e.g. #search-input (optional)" value={cfg.selector || ''} onChange={e => updateCfg('selector', e.target.value)} className="cp-input font-mono text-[11px]" />
+              <input type="text" placeholder="e.g. #search-input (optional)" value={cfg.selector || ''}
+                onChange={e => updateCfg('selector', e.target.value)} className="cp-input font-mono text-[11px]" />
             </Field>
           </>
         )}
@@ -749,7 +787,8 @@ const ConfigPanel = ({
         {/* Notes */}
         <div className="border-t border-border/50 pt-3">
           <Field label="Notes (optional)">
-            <input type="text" placeholder="Reminder or explanation…" value={cfg.notes || ''} onChange={e => updateCfg('notes', e.target.value)} className="cp-input" />
+            <input type="text" placeholder="Reminder or explanation…" value={cfg.notes || ''}
+              onChange={e => updateCfg('notes', e.target.value)} className="cp-input" />
           </Field>
         </div>
 
@@ -771,21 +810,21 @@ const Field = ({ label, hint, children }: { label: React.ReactNode; hint?: strin
 
 const TECH_OPTIONS: Record<string, Array<{ value: string; icon: string; name: string; desc: string }>> = {
   type_text: [
-    { value: 'send_keys',      icon: '⌨', name: 'send_keys()',  desc: 'Standard Selenium' },
-    { value: 'dispatch_event', icon: '⚡', name: 'dispatchEvent', desc: 'Angular / React'  },
-    { value: 'native_setter',  icon: '🔒', name: 'Native Setter', desc: 'Bypass trackers'  },
+    { value: 'send_keys',      icon: '⌨', name: 'send_keys()',  desc: 'Standard Selenium'  },
+    { value: 'dispatch_event', icon: '⚡', name: 'dispatchEvent', desc: 'Angular / React'   },
+    { value: 'native_setter',  icon: '🔒', name: 'Native Setter', desc: 'Bypass trackers'   },
   ],
   click: [
-    { value: 'standard_click', icon: '🖱', name: 'Standard',    desc: 'Normal .click()' },
-    { value: 'js_click',       icon: '⚡', name: 'JS Execute',  desc: 'Bypass overlays' },
+    { value: 'standard_click', icon: '🖱', name: 'Standard',   desc: 'Normal .click()'   },
+    { value: 'js_click',       icon: '⚡', name: 'JS Execute', desc: 'Bypass overlays'   },
   ],
   select: [
     { value: 'native_select',    icon: '▼', name: 'Native Select', desc: 'HTML <select>'  },
-    { value: 'mat_autocomplete', icon: '✦', name: 'Autocomplete',  desc: 'Material UI'   },
+    { value: 'mat_autocomplete', icon: '✦', name: 'Autocomplete',  desc: 'Material UI'    },
   ],
   checkbox: [
-    { value: 'standard_click', icon: '🖱', name: 'Standard',   desc: 'Normal click'    },
-    { value: 'js_click',       icon: '⚡', name: 'JS Execute', desc: 'Hidden toggles'  },
+    { value: 'standard_click', icon: '🖱', name: 'Standard',   desc: 'Normal click'     },
+    { value: 'js_click',       icon: '⚡', name: 'JS Execute', desc: 'Hidden toggles'   },
   ],
 };
 
@@ -795,7 +834,9 @@ const TechGrid = ({ nodeType, value, onChange }: { nodeType: string; value: stri
     <div className="grid grid-cols-2 gap-1.5">
       {opts.map(opt => (
         <button key={opt.value} onClick={() => onChange(opt.value)}
-          className={`text-left p-2 rounded-lg border transition-all ${value === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:border-border/80 hover:bg-muted/50'}`}>
+          className={`text-left p-2 rounded-lg border transition-all ${
+            value === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:border-border/80 hover:bg-muted/50'
+          }`}>
           <div className="text-base mb-0.5">{opt.icon}</div>
           <div className="text-[10px] font-semibold">{opt.name}</div>
           <div className="text-[9px] text-muted-foreground">{opt.desc}</div>
@@ -806,7 +847,7 @@ const TechGrid = ({ nodeType, value, onChange }: { nodeType: string; value: stri
 };
 
 // ─────────────────────────────────────────────
-// FLOW CANVAS (no edges / wire logic)
+// FLOW CANVAS
 // ─────────────────────────────────────────────
 const FlowCanvas = ({
   nodes, setNodes, setSelectedNodeId, availableColumns,
@@ -820,21 +861,19 @@ const FlowCanvas = ({
   initialName: string;
   initialDesc: string;
 }) => {
-  const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const dropProcessed = useRef(false);
-  const { screenToFlowPosition } = useReactFlow();
-  const router = useRouter();
-  const [isSaving, setIsSaving]           = useState(false);
-  const [saved, setSaved]                 = useState(false);
+  const reactFlowWrapper              = useRef<HTMLDivElement>(null);
+  const dropProcessed                 = useRef(false);
+  const { screenToFlowPosition }      = useReactFlow();
+  const router                        = useRouter();
+  const [isSaving, setIsSaving]       = useState(false);
+  const [saved, setSaved]             = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [jsonDialogOpen, setJsonDialogOpen] = useState(false);
-  const [wfName, setWfName] = useState(initialName);
-  const [wfDesc, setWfDesc] = useState(initialDesc);
+  const [wfName, setWfName]           = useState(initialName);
+  const [wfDesc, setWfDesc]           = useState(initialDesc);
 
-  useEffect(() => {
-    if (initialName) setWfName(initialName);
-    if (initialDesc) setWfDesc(initialDesc);
-  }, [initialName, initialDesc]);
+  useEffect(() => { if (initialName) setWfName(initialName); }, [initialName]);
+  useEffect(() => { if (initialDesc) setWfDesc(initialDesc); }, [initialDesc]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => setNodes(nds => applyNodeChanges(changes, nds)),
@@ -846,18 +885,15 @@ const FlowCanvas = ({
   });
 
   const onDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = 'move';
+    e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move';
   }, []);
 
   useEffect(() => {
     const el = reactFlowWrapper.current;
     if (!el) return;
-    const over = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; };
+    const over  = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; };
     const enter = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); dropProcessed.current = false; };
-    el.addEventListener('dragover', over);
-    el.addEventListener('dragenter', enter);
+    el.addEventListener('dragover', over); el.addEventListener('dragenter', enter);
     return () => { el.removeEventListener('dragover', over); el.removeEventListener('dragenter', enter); };
   }, []);
 
@@ -890,7 +926,7 @@ const FlowCanvas = ({
     const defaultTechnique =
       rType === 'click'    ? 'standard_click' :
       rType === 'select'   ? 'native_select'  :
-      rType === 'checkbox' ? 'standard_click' : 'send_keys';
+      rType === 'checkbox' ? 'js_click'       : 'send_keys';
 
     const newNode: Node = {
       id: getId(),
@@ -901,9 +937,13 @@ const FlowCanvas = ({
         sequence: 0,
         config: {
           retries: 2, retryDelay: 1000, onError: 'stop',
-          technique: defaultTechnique, waitType: 'element',
-          waitTimeout: 10, loopCount: 3, checkAction: 'toggle',
-          waitAfterMs: 0,   // ← default: no extra wait
+          technique: defaultTechnique,
+          waitType: 'element', waitTimeout: 10,
+          loopCount: 3,
+          // Checkbox defaults to safe idempotent mode
+          checkAction: 'ensure_checked',
+          stateSelector: '',
+          waitAfterMs: 0,
           action: rType === 'switch_iframe' ? 'enter' : rType === 'switch_tab' ? 'next' : undefined,
           value: rType === 'press_key' ? 'ENTER' : undefined,
         },
@@ -916,7 +956,6 @@ const FlowCanvas = ({
   const handleFinalSave = async () => {
     if (!wfName) { alert('Please enter a workflow name'); return; }
     setIsSaving(true);
-    // Pass empty edges array — wires removed
     const result = await saveWorkflow(workflowId || null, wfName, wfDesc, nodes, []);
     if (result.success) {
       setSaved(true); setSaveDialogOpen(false);
@@ -927,8 +966,7 @@ const FlowCanvas = ({
     }
   };
 
-  const jsonString = jsonDialogOpen ? JSON.stringify(buildWorkflowJSON(nodes), null, 2) : '';
-
+  const jsonString   = jsonDialogOpen ? JSON.stringify(buildWorkflowJSON(nodes), null, 2) : '';
   const copyJson     = () => navigator.clipboard.writeText(jsonString).catch(() => {});
   const downloadJson = () => {
     const blob = new Blob([jsonString], { type: 'application/json' });
@@ -939,20 +977,16 @@ const FlowCanvas = ({
   return (
     <div ref={reactFlowWrapper} className="flex-1 h-full relative" onDrop={onDrop} onDragOver={onDragOver} style={{ position: 'relative' }}>
       <ReactFlow
-        nodes={nodes}
-        edges={[]}              // ← always empty, no wires
+        nodes={nodes} edges={[]}
         onNodesChange={onNodesChange}
-        onEdgesChange={() => {}} // no-op
-        onConnect={() => {}}     // no-op
-        nodeTypes={nodeTypes}
-        fitView
-        colorMode="system"
+        onEdgesChange={() => {}} onConnect={() => {}}
+        nodeTypes={nodeTypes} fitView colorMode="system"
       >
         <Background gap={24} size={1} color="hsl(var(--border) / 0.4)" />
         <Controls className="bg-card border border-border shadow-sm rounded-lg overflow-hidden" />
       </ReactFlow>
 
-      {/* Step-order legend */}
+      {/* Legend */}
       <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 bg-card/90 border border-border rounded-lg px-3 py-1.5 shadow-sm backdrop-blur-sm">
         <div className="w-5 h-5 rounded-full bg-foreground text-background flex items-center justify-center text-[9px] font-bold">1</div>
         <span className="text-[10px] text-muted-foreground">Steps run in number order — set Step Number in each block</span>
@@ -1023,11 +1057,13 @@ const FlowCanvas = ({
             <div className="space-y-3 mb-5">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Workflow Name</label>
-                <input type="text" placeholder="e.g. ICICI Lombard Form Fill" value={wfName} onChange={e => setWfName(e.target.value)} className="cp-input" autoFocus />
+                <input type="text" placeholder="e.g. ICICI Lombard Form Fill" value={wfName}
+                  onChange={e => setWfName(e.target.value)} className="cp-input" autoFocus />
               </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Description (optional)</label>
-                <textarea placeholder="What does this automation do?" value={wfDesc} onChange={e => setWfDesc(e.target.value)} className="cp-textarea" />
+                <textarea placeholder="What does this automation do?" value={wfDesc}
+                  onChange={e => setWfDesc(e.target.value)} className="cp-textarea" />
               </div>
             </div>
             <div className="flex justify-end gap-2">
@@ -1045,44 +1081,39 @@ const FlowCanvas = ({
 };
 
 // ─────────────────────────────────────────────
-// SIDEBAR (unchanged visually)
+// SIDEBAR
 // ─────────────────────────────────────────────
 interface ToolDef {
   icon: React.ComponentType<{ size: number; className?: string }>;
-  label: string;
-  nodeType: string;
-  sub: string;
-  iName: string;
-  category: string;
-  badge?: string;
-  badgeColor?: string;
+  label: string; nodeType: string; sub: string; iName: string; category: string;
+  badge?: string; badgeColor?: string;
 }
 
 const TOOL_SECTIONS: Array<{ title: string; tools: ToolDef[] }> = [
   { title: 'Core', tools: [
-    { icon: Play, label: 'Start', nodeType: 'trigger', sub: 'Entry point', iName: 'Play', category: 'trigger' },
-    { icon: Globe, label: 'Open URL', nodeType: 'open_url', sub: 'Navigation', iName: 'Globe', category: 'action' },
+    { icon: Play,            label: 'Start',            nodeType: 'trigger',       sub: 'Entry point',        iName: 'Play',             category: 'trigger'  },
+    { icon: Globe,           label: 'Open URL',         nodeType: 'open_url',      sub: 'Navigation',         iName: 'Globe',            category: 'action'   },
   ]},
   { title: 'Data', tools: [
-    { icon: FileSpreadsheet, label: 'Loop Excel / CSV', nodeType: 'loop_excel', sub: 'Per-row iteration', iName: 'FileSpreadsheet', category: 'data' },
-    { icon: Download, label: 'Extract & Save', nodeType: 'extract', sub: 'Scrape to file', iName: 'Download', category: 'data' },
+    { icon: FileSpreadsheet, label: 'Loop Excel / CSV', nodeType: 'loop_excel',    sub: 'Per-row iteration',  iName: 'FileSpreadsheet',  category: 'data'     },
+    { icon: Download,        label: 'Extract & Save',   nodeType: 'extract',       sub: 'Scrape to file',     iName: 'Download',         category: 'data'     },
   ]},
   { title: 'Interactions', tools: [
-    { icon: Keyboard, label: 'Type Text / Date', nodeType: 'type_text', sub: 'Fill text field', iName: 'Keyboard', category: 'action' },
-    { icon: MousePointerClick, label: 'Click Element', nodeType: 'click', sub: 'Button / link', iName: 'MousePointerClick', category: 'action' },
-    { icon: ListFilter, label: 'Select Dropdown', nodeType: 'select', sub: 'Native or Material', iName: 'ListFilter', category: 'action' },
-    { icon: CheckSquare, label: 'Toggle Checkbox', nodeType: 'checkbox', sub: 'Check / uncheck', iName: 'CheckSquare', category: 'action' },
+    { icon: Keyboard,        label: 'Type Text / Date', nodeType: 'type_text',     sub: 'Fill text field',    iName: 'Keyboard',         category: 'action'   },
+    { icon: MousePointerClick, label: 'Click Element',  nodeType: 'click',         sub: 'Button / link',      iName: 'MousePointerClick', category: 'action'  },
+    { icon: ListFilter,      label: 'Select Dropdown',  nodeType: 'select',        sub: 'Native or Material', iName: 'ListFilter',       category: 'action'   },
+    { icon: CheckSquare,     label: 'Toggle Checkbox',  nodeType: 'checkbox',      sub: 'Smart state-aware',  iName: 'CheckSquare',      category: 'action'   },
   ]},
   { title: 'Logic', tools: [
-    { icon: Timer, label: 'Smart Wait', nodeType: 'wait', sub: 'Element or delay', iName: 'Timer', category: 'logic', badge: 'NEW', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
-    { icon: GitBranch, label: 'If / Else Branch', nodeType: 'if_else', sub: 'Condition logic', iName: 'GitBranch', category: 'logic', badge: 'NEW', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
-    { icon: RefreshCw, label: 'Loop N Times', nodeType: 'loop', sub: 'Repeat steps', iName: 'RefreshCw', category: 'logic', badge: 'NEW', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+    { icon: Timer,           label: 'Smart Wait',       nodeType: 'wait',          sub: 'Element or delay',   iName: 'Timer',    category: 'logic',    badge: 'NEW', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+    { icon: GitBranch,       label: 'If / Else Branch', nodeType: 'if_else',       sub: 'Condition logic',    iName: 'GitBranch', category: 'logic',   badge: 'NEW', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+    { icon: RefreshCw,       label: 'Loop N Times',     nodeType: 'loop',          sub: 'Repeat steps',       iName: 'RefreshCw', category: 'logic',   badge: 'NEW', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
   ]},
   { title: 'Advanced', tools: [
-    { icon: Code, label: 'JS Injection', nodeType: 'js_inject', sub: 'Custom JavaScript', iName: 'Code', category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
-    { icon: Layers, label: 'Iframe Switch', nodeType: 'switch_iframe', sub: 'Enter/Exit Iframes', iName: 'Layers', category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
-    { icon: Monitor, label: 'Tab Manager', nodeType: 'switch_tab', sub: 'Switch/Close Tabs', iName: 'Monitor', category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
-    { icon: Keyboard, label: 'Press Key', nodeType: 'press_key', sub: 'ENTER, TAB, etc.', iName: 'Keyboard', category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+    { icon: Code,            label: 'JS Injection',     nodeType: 'js_inject',     sub: 'Custom JavaScript',  iName: 'Code',    category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+    { icon: Layers,          label: 'Iframe Switch',    nodeType: 'switch_iframe', sub: 'Enter/Exit Iframes', iName: 'Layers',  category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+    { icon: Monitor,         label: 'Tab Manager',      nodeType: 'switch_tab',    sub: 'Switch/Close Tabs',  iName: 'Monitor', category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+    { icon: Keyboard,        label: 'Press Key',        nodeType: 'press_key',     sub: 'ENTER, TAB, etc.',   iName: 'Keyboard', category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
   ]},
 ];
 
@@ -1090,9 +1121,9 @@ const Sidebar = () => {
   const [search, setSearch] = useState('');
   const onDragStart = (e: React.DragEvent, tool: ToolDef) => {
     e.dataTransfer.setData('application/reactflow-nodeType', tool.nodeType);
-    e.dataTransfer.setData('application/reactflow-label', tool.label);
-    e.dataTransfer.setData('application/reactflow-subline', tool.sub);
-    e.dataTransfer.setData('application/reactflow-iName', tool.iName);
+    e.dataTransfer.setData('application/reactflow-label',    tool.label);
+    e.dataTransfer.setData('application/reactflow-subline',  tool.sub);
+    e.dataTransfer.setData('application/reactflow-iName',    tool.iName);
     e.dataTransfer.setData('application/reactflow-category', tool.category);
     e.dataTransfer.setData('text/plain', JSON.stringify({ nodeType: tool.nodeType, label: tool.label, subline: tool.sub, iName: tool.iName, category: tool.category }));
     e.dataTransfer.effectAllowed = 'move';
@@ -1113,7 +1144,8 @@ const Sidebar = () => {
         </div>
         <div className="flex items-center gap-1.5 bg-muted/60 rounded-md px-2 py-1.5 border border-border/50">
           <span className="text-muted-foreground text-xs">⌕</span>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search blocks…" className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search blocks…"
+            className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60" />
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-2">
@@ -1156,12 +1188,12 @@ const Sidebar = () => {
 // MAIN EXPORT
 // ─────────────────────────────────────────────
 export function WorkflowEditor() {
-  const [nodes, setNodes]               = useState<Node[]>([]);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [availableColumns, setAvailableColumns] = useState<string[]>([]);
-  const [isLoading, setIsLoading]       = useState(false);
-  const [workflowName, setWorkflowName] = useState('');
-  const [workflowDesc, setWorkflowDesc] = useState('');
+  const [nodes, setNodes]                         = useState<Node[]>([]);
+  const [selectedNodeId, setSelectedNodeId]       = useState<string | null>(null);
+  const [availableColumns, setAvailableColumns]   = useState<string[]>([]);
+  const [isLoading, setIsLoading]                 = useState(false);
+  const [workflowName, setWorkflowName]           = useState('');
+  const [workflowDesc, setWorkflowDesc]           = useState('');
 
   const workflowId = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('id')
@@ -1179,11 +1211,8 @@ export function WorkflowEditor() {
           setWorkflowName(data.workflow.name || '');
           setWorkflowDesc(data.workflow.description || '');
         }
-      } catch (err) {
-        console.error('Failed to load workflow for editing:', err);
-      } finally {
-        setIsLoading(false);
-      }
+      } catch (err) { console.error('Failed to load workflow:', err); }
+      finally { setIsLoading(false); }
     };
     load();
   }, [workflowId]);
@@ -1228,8 +1257,7 @@ export function WorkflowEditor() {
         <ReactFlowProvider>
           <Sidebar />
           <FlowCanvas
-            nodes={nodes}
-            setNodes={setNodes}
+            nodes={nodes} setNodes={setNodes}
             setSelectedNodeId={setSelectedNodeId}
             availableColumns={availableColumns}
             workflowId={workflowId}
