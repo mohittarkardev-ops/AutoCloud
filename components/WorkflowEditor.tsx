@@ -21,7 +21,7 @@ import {
   GitBranch, RefreshCw, Download, Eye, ChevronDown,
   Layers, Monitor, Info,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation'; // 🔴 useSearchParams joda gaya
 import { saveWorkflow } from '@/app/actions/workflows';
 
 // ─────────────────────────────────────────────
@@ -1195,9 +1195,9 @@ export function WorkflowEditor() {
   const [workflowName, setWorkflowName]           = useState('');
   const [workflowDesc, setWorkflowDesc]           = useState('');
 
-  const workflowId = typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('id')
-    : null;
+  // 🔴 THE FIX: Next.js native hook for reading URL parameters dynamically (Bina refresh kiye chalega)
+  const searchParams = useSearchParams();
+  const workflowId = searchParams ? searchParams.get('id') : null;
 
   useEffect(() => {
     if (!workflowId) return;
@@ -1220,18 +1220,36 @@ export function WorkflowEditor() {
   const selectedNode = nodes.find(n => n.id === selectedNodeId) ?? null;
 
   const updateNodeData = (id: string, patch: Partial<AutomationNodeData>) => {
-    setNodes(nds => nds.map(node => {
-      if (node.id !== id) return node;
-      const current = node.data as unknown as AutomationNodeData;
-      return {
-        ...node,
-        data: {
-          ...current,
-          ...patch,
-          config: patch.config ? { ...current.config, ...patch.config } : current.config,
-        },
-      };
-    }));
+    setNodes(nds => {
+      const newNodes = [...nds];
+      
+      // 🔴 MAGIC DUPLICATE PREVENTION LOGIC
+      // Agar user koi naya Step Number (sequence) dalta hai
+      if (patch.sequence !== undefined && patch.sequence > 0) {
+        // Toh check karo ki kya kisi aur block ke paas pehle se ye number hai
+        const conflictIdx = newNodes.findIndex(n => n.id !== id && (n.data as unknown as AutomationNodeData).sequence === patch.sequence);
+        if (conflictIdx !== -1) {
+          // Agar hai, toh us purane block ka number 0 ('—') kar do
+          newNodes[conflictIdx] = {
+            ...newNodes[conflictIdx],
+            data: { ...newNodes[conflictIdx].data, sequence: 0 } as any
+          };
+        }
+      }
+
+      return newNodes.map(node => {
+        if (node.id !== id) return node;
+        const current = node.data as unknown as AutomationNodeData;
+        return {
+          ...node,
+          data: {
+            ...current,
+            ...patch,
+            config: patch.config ? { ...current.config, ...patch.config } : current.config,
+          },
+        };
+      });
+    });
   };
 
   return (

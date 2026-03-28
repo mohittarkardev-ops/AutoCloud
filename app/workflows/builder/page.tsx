@@ -1,64 +1,47 @@
-// web-dashboard/app/workflows/page.tsx
-import { Button } from "@/components/ui/button"
-import { LayoutDashboard, MonitorSmartphone, PlayCircle, Settings, Network } from "lucide-react"
-import Link from "next/link"
+// web-dashboard/app/workflows/builder/page.tsx
+import { Suspense } from "react"
 import { WorkflowEditor } from "@/components/WorkflowEditor"
-import { Suspense } from "react" // 🔴 NAYA IMPORT
+import { Sidebar } from "@/components/Sidebar" 
 
-export default function WorkflowsPage() {
+export default function WorkflowBuilderPage() {
   return (
-    <div className="flex min-h-screen w-full bg-background text-foreground">
+    <div className="flex min-h-screen bg-[#fafafa] dark:bg-background overflow-hidden">
       
-      {/* Sidebar */}
-      <aside className="w-64 border-r bg-muted/20 p-6 flex flex-col hidden md:flex">
-        <div className="flex items-center gap-3 mb-10">
-          <div className="h-8 w-8 rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold shadow-md">A</div>
-          <h1 className="text-xl font-bold tracking-tight">AutoCloud</h1>
-        </div>
-
-        <nav className="flex flex-col gap-2 flex-1">
-          <Link href="/">
-            <Button variant="ghost" className="w-full justify-start gap-3">
-              <LayoutDashboard size={18} /> Overview
-            </Button>
-          </Link>
-          <Link href="/nodes">
-            <Button variant="ghost" className="w-full justify-start gap-3">
-              <MonitorSmartphone size={18} /> Nodes & Devices
-            </Button>
-          </Link>
-          <Link href="/builder">
-            <Button variant="ghost" className="w-full justify-start gap-3">
-              <PlayCircle size={18} /> Assign Tasks
-            </Button>
-          </Link>
-          <Link href="/workflows">
-            <Button variant="secondary" className="w-full justify-start gap-3">
-              <Network size={18} /> Visual Builder
-            </Button>
-          </Link>
-          <Button variant="ghost" className="justify-start gap-3">
-            <Settings size={18} /> Settings
-          </Button>
-        </nav>
-      </aside>
+      {/* 🔴 Shared Global Sidebar */}
+      <Sidebar />
 
       {/* Main Canvas Area */}
-      <main className="flex-1 flex flex-col p-8 pb-0 h-screen overflow-hidden">
+      <main className="flex-1 flex flex-col p-6 lg:p-8 h-screen overflow-hidden w-full">
+        
+        {/* Header */}
         <header className="flex justify-between items-center mb-6 shrink-0">
           <div>
-            <h2 className="text-3xl font-bold tracking-tight">Workflow Builder</h2>
-            <p className="text-muted-foreground mt-1">Design automation flows by connecting logic nodes.</p>
+            <h2 className="text-3xl font-extrabold tracking-tight text-foreground">
+              Workflow Builder
+            </h2>
+            <p className="text-muted-foreground font-medium mt-1">
+              Design, sequence, and configure your automation blocks without writing code.
+            </p>
           </div>
         </header>
 
-        {/* React Flow Canvas Container */}
-        <div className="flex-1 pb-8">
-           {/* 🔴 THE FIX: Wrapped in Suspense so Next.js can resolve URL params dynamically */}
-           <Suspense fallback={<div className="flex items-center justify-center h-full"><p className="text-muted-foreground">Loading Builder...</p></div>}>
+        {/* React Flow / Builder Canvas Container */}
+        <div className="flex-1 pb-4 relative">
+           {/* 🔴 THE FIX: Wrapped in Suspense so Next.js can resolve URL params dynamically.
+             Beautiful fallback loader added while the heavy canvas initializes.
+           */}
+           <Suspense fallback={
+             <div className="flex flex-col items-center justify-center h-full w-full border border-border rounded-xl bg-card/30 shadow-sm">
+               <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin mb-4 shadow-sm" />
+               <p className="text-muted-foreground font-bold tracking-widest uppercase text-xs">
+                 Initializing Engine...
+               </p>
+             </div>
+           }>
              <WorkflowEditor />
            </Suspense>
         </div>
+        
       </main>
 
     </div>
