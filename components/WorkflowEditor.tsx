@@ -19,15 +19,17 @@ import {
   Code, CheckSquare, ListFilter, FileSpreadsheet, CheckCircle2,
   Loader2, ShieldCheck, FileSearch, AlertCircle,
   GitBranch, RefreshCw, Download, Eye, ChevronDown,
-  Layers, Monitor, Info,
+  Layers, Monitor, Info, Database, Calculator, UserCheck,
+  Shield, Shuffle, AlertTriangle, Variable, SplitSquareHorizontal,
 } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation'; // 🔴 useSearchParams joda gaya
+import { useRouter, useSearchParams } from 'next/navigation';
 import { saveWorkflow } from '@/app/actions/workflows';
 
 // ─────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────
 interface NodeConfig {
+  // Core
   selector?: string;
   value?: string;
   technique?: string;
@@ -43,13 +45,70 @@ interface NodeConfig {
   jsCode?: string;
   extractFields?: string;
   outputFile?: string;
-  // ── Checkbox / Toggle (updated) ──
   checkAction?: 'ensure_checked' | 'ensure_unchecked' | 'toggle';
-  stateSelector?: string;   // optional: separate element that shows the real state
+  stateSelector?: string;
   fileName?: string;
   notes?: string;
   action?: string;
   waitAfterMs?: number;
+
+  // ── NEW: Save to Variable ──
+  variableName?: string;
+  variableSource?: 'element_text' | 'element_value' | 'element_attr' | 'url' | 'page_title';
+  variableAttr?: string;
+
+  // ── NEW: Calculate / Modify Data ──
+  calcOperation?: 'date_subtract' | 'date_add' | 'number_add' | 'number_subtract' | 'text_split' | 'text_join' | 'text_replace';
+  calcInput?: string;        // {{TPEndDate}} or raw value
+  calcOperand?: string;      // e.g. "5" (years/months/days/number)
+  calcUnit?: 'years' | 'months' | 'days' | 'number';
+  calcSplitIndex?: number;   // which word/part to grab (0-based)
+  calcOutputVar?: string;    // variable name to store result
+
+  // ── NEW: If/Else — data-driven conditions ──
+  conditionType?: 'element_exists' | 'element_text_equals' | 'element_text_contains'
+    | 'variable_empty' | 'variable_equals' | 'variable_contains'
+    | 'url_contains' | 'page_has_text';
+  conditionLeft?: string;    // {{variable}} or selector
+  conditionOperator?: 'is_empty' | 'is_not_empty' | 'equals' | 'not_equals' | 'contains' | 'not_contains';
+  conditionRight?: string;   // comparison value
+  trueBranch?: string;       // label for true path
+  falseBranch?: string;      // label for false path
+
+  // ── NEW: Try-Catch Fallback ──
+  tryStepIds?: string[];
+  catchCondition?: string;   // e.g. ".swal2-html-container"
+  catchConditionType?: 'element_appears' | 'element_text_contains' | 'exception';
+  fallbackStepIds?: string[];
+
+  // ── NEW: Human-in-the-Loop ──
+  hitlMessage?: string;
+  hitlTrigger?: 'always' | 'if_element' | 'if_variable_empty';
+  hitlTriggerSelector?: string;
+  hitlTriggerVariable?: string;
+
+  // ── NEW: PIN Fallback ──
+  pinPrimaryColumn?: string;
+  pinSecondaryColumn?: string;
+  pinTargetSelector?: string;
+  pinErrorSelector?: string;
+  pinErrorTextMatch?: string;
+  pinSubmitSelector?: string;
+
+  // ── NEW: Fill Strategy ──
+  fillStrategy?: 'fill_if_empty' | 'force_fill' | 'fill_if_zero_or_na';
+
+  // ── NEW: Logout Detection ──
+  logoutDetectSelector?: string;
+  logoutMessage?: string;
+
+  // ── NEW: Scroll behaviour ──
+  scrollIntoView?: boolean;
+  scrollBlock?: 'start' | 'center' | 'end';
+
+  // ── NEW: select by value vs text ──
+  selectBy?: 'value' | 'text' | 'index' | 'mat_autocomplete';
+  matWords?: number;          // how many words to use in autocomplete search
 }
 
 interface AutomationNodeData {
@@ -64,59 +123,96 @@ interface AutomationNodeData {
 }
 
 // ─────────────────────────────────────────────
-// ICICI PRESETS
+// ICICI PRESETS — expanded
 // ─────────────────────────────────────────────
 const ICICI_PRESETS: Record<string, Array<{
   label: string; selector?: string; value?: string; technique?: string;
   waitType?: string; waitTarget?: string; waitTimeout?: number;
+  fillStrategy?: string; scrollIntoView?: boolean;
 }>> = {
   type_text: [
-    { label: 'Registration No',         selector: '#txtreg',                                              technique: 'send_keys'      },
-    { label: 'Engine Number',           selector: "//input[@id='txtreg'][@placeholder='Engine Number']",  technique: 'send_keys'      },
-    { label: 'Chassis Number',          selector: '#carreg',                                              technique: 'send_keys'      },
-    { label: 'TP Policy Number',        selector: '#TPpolno',                                             technique: 'send_keys'      },
-    { label: 'SAOD Policy Number',      selector: '#prevpolno',                                           technique: 'send_keys'      },
-    { label: 'Insured Name',            selector: '#nameCstm',                                            technique: 'send_keys'      },
-    { label: 'Mobile Number',           selector: '#mobile',                                              technique: 'send_keys'      },
-    { label: 'Email',                   selector: '#email',                                               technique: 'send_keys'      },
-    { label: 'Pincode',                 selector: '#pincode',                                             technique: 'send_keys'      },
-    { label: 'PAN Number',              selector: '#pan_no',                                              technique: 'native_setter'  },
-    { label: 'Date of Birth (KYC)',     selector: '#pan_dob',                                             technique: 'native_setter'  },
-    { label: 'IDV Value',               selector: '#sirangeinput',                                        technique: 'dispatch_event' },
-    { label: 'TP Start Date',           selector: '#TPpolstartdate',                                      technique: 'dispatch_event' },
-    { label: 'TP End Date',             selector: '#TPpolenddate',                                        technique: 'dispatch_event' },
-    { label: 'Non-Electrical Value',    selector: "input[type='text'][id='NonElectricalAccessories']",    technique: 'send_keys'      },
+    { label: 'Registration No',         selector: '#txtreg',                                              technique: 'send_keys',      fillStrategy: 'fill_if_empty' },
+    { label: 'Engine Number',           selector: "//input[@id='txtreg'][@placeholder='Engine Number']",  technique: 'send_keys',      fillStrategy: 'fill_if_empty' },
+    { label: 'Chassis Number',          selector: '#carreg',                                              technique: 'send_keys',      fillStrategy: 'fill_if_empty' },
+    { label: 'TP Policy Number',        selector: '#TPpolno',                                             technique: 'send_keys',      fillStrategy: 'fill_if_empty' },
+    { label: 'SAOD Policy Number',      selector: '#prevpolno',                                           technique: 'send_keys',      fillStrategy: 'fill_if_empty' },
+    { label: 'Insured Name',            selector: '#nameCstm',                                            technique: 'send_keys',      fillStrategy: 'force_fill'    },
+    { label: 'Mobile Number',           selector: '#mobile',                                              technique: 'send_keys',      fillStrategy: 'fill_if_empty' },
+    { label: 'Email',                   selector: '#email',                                               technique: 'send_keys',      fillStrategy: 'fill_if_empty' },
+    { label: 'Pincode (Primary)',        selector: '#pincode',                                             technique: 'send_keys',      fillStrategy: 'force_fill'    },
+    { label: 'PAN Number',              selector: '#pan_no',                                              technique: 'native_setter'   },
+    { label: 'Date of Birth (KYC)',     selector: '#pan_dob',                                             technique: 'native_setter'   },
+    { label: 'IDV Value',               selector: '#sirangeinput',                                        technique: 'dispatch_event'  },
+    { label: 'TP Start Date (JS)',       selector: '#TPpolstartdate',                                      technique: 'dispatch_event'  },
+    { label: 'TP End Date (JS)',         selector: '#TPpolenddate',                                        technique: 'dispatch_event'  },
+    { label: 'SAOD Prev Policy End',    selector: '#prevpolenddate',                                      technique: 'dispatch_event'  },
+    { label: 'Non-Electrical Value',    selector: "input[type='text'][id='NonElectricalAccessories']",    technique: 'send_keys',      fillStrategy: 'force_fill'    },
+    { label: 'DOB (Proposal)',          selector: '#scpaDOB',                                             technique: 'dispatch_event'  },
+    { label: 'Permanent Address',       selector: '#address1',                                            technique: 'send_keys',      fillStrategy: 'force_fill'    },
   ],
   click: [
-    { label: 'Fetch Vehicle Details',   selector: '#showHiddenForm',                        technique: 'js_click'       },
-    { label: 'Get Quote Button',        selector: '#get_quote',                             technique: 'standard_click' },
-    { label: 'Recalculate Button',      selector: '#submit_quote',                          technique: 'standard_click' },
-    { label: 'Final Submit',            selector: '#submit_quote',                          technique: 'js_click'       },
-    { label: 'Create Proposal',         selector: '#buypol',                                technique: 'js_click'       },
-    { label: 'Complete KYC Radio',      selector: "label[for='kycbtn']",                    technique: 'js_click'       },
-    { label: 'Send Link Button',        selector: "//span[normalize-space()='Send Link']",  technique: 'js_click'       },
-    { label: 'OK (SweetAlert Popup)',   selector: 'button.swal2-confirm',                   technique: 'js_click'       },
-    { label: 'Proceed (KYC Customer)', selector: '#arya_proceed_btn',                       technique: 'js_click'       },
+    { label: 'Fetch Vehicle Details',      selector: '#showHiddenForm',                                    technique: 'js_click', scrollIntoView: true },
+    { label: 'Get Quote Button',           selector: '#get_quote',                                         technique: 'standard_click'  },
+    { label: 'Recalculate Button',         selector: '#submit_quote',                                      technique: 'standard_click'  },
+    { label: 'Final Submit',              selector: '#submit_quote',                                      technique: 'js_click', scrollIntoView: true },
+    { label: 'Create Proposal (buypol)', selector: '#buypol',                                             technique: 'js_click', scrollIntoView: true },
+    { label: 'Do It Later (KYC Radio)', selector: "label[for='doItLater']",                              technique: 'js_click'        },
+    { label: 'Complete KYC Radio',        selector: "label[for='kycbtn']",                                technique: 'js_click'        },
+    { label: 'Click Here (Customise)',   selector: "//a[normalize-space()='Click here']",                 technique: 'js_click', scrollIntoView: true },
+    { label: 'Send Link Button',          selector: "//span[normalize-space()='Send Link']",              technique: 'js_click', scrollIntoView: true },
+    { label: 'Inline SUBMIT (SendLink)', selector: "//div[@id='sendLinkInline']//button[normalize-space()='SUBMIT']", technique: 'js_click', scrollIntoView: true },
+    { label: 'Final OK Button',           selector: "//button[normalize-space()='OK']",                  technique: 'js_click', scrollIntoView: true },
+    { label: 'OK (SweetAlert Popup)',    selector: 'button.swal2-confirm',                               technique: 'js_click'        },
+    { label: 'Proceed (KYC/Arya)',       selector: '#arya_proceed_btn',                                  technique: 'js_click'        },
   ],
   select: [
-    { label: 'NCB → 0%',           selector: "//select[.//option[text()='0%']]", value: '0',      technique: 'native_select'    },
-    { label: 'Zero Dep → Silver',  selector: '#zerodep',                         value: 'Silver', technique: 'native_select'    },
-    { label: 'TP Insurer Name',    selector: '#previnstp',                                         technique: 'mat_autocomplete' },
-    { label: 'SAOD Insurer Name',  selector: '#previns',                                           technique: 'mat_autocomplete' },
+    { label: 'NCB → 0%',            selector: "//select[.//option[text()='0%']]", value: '0',       technique: 'native_select'    },
+    { label: 'Zero Dep → Silver',   selector: '#zerodep',                          value: 'silver',  technique: 'native_select'    },
+    { label: 'TP Insurer Name',     selector: '#previnstp',                                          technique: 'mat_autocomplete' },
+    { label: 'SAOD Insurer Name',   selector: '#previns',                                            technique: 'mat_autocomplete' },
   ],
   checkbox: [
-    { label: 'Standalone OD Toggle',        selector: "label[for='switch']",               technique: 'js_click' },
-    { label: 'Non-Electrical Accessories',  selector: "label[for='NonElectricalAccessories']", technique: 'js_click' },
-    { label: 'Uncheck PA Cover',            selector: '#scpaCoverSAOD1',                   technique: 'js_click' },
-    { label: 'Uncheck IL Smart Assist',     selector: "label[for='ILSmartAssistPrime']",   technique: 'js_click' },
-    { label: 'Zero Dep Checkbox',           selector: "label[for='ZeroDepPlanName']",      technique: 'js_click' },
+    { label: 'Standalone OD Toggle',         selector: "label[for='switch']",                  technique: 'js_click' },
+    { label: 'Non-Electrical Accessories',   selector: "label[for='NonElectricalAccessories']", technique: 'js_click' },
+    { label: 'Uncheck PA Cover',             selector: '#scpaCoverSAOD1',                      technique: 'js_click' },
+    { label: 'Uncheck IL Smart Assist',      selector: "label[for='ILSmartAssistPrime']",      technique: 'js_click' },
+    { label: 'Zero Dep Checkbox',            selector: "label[for='ZeroDepPlanName']",         technique: 'js_click' },
   ],
   wait: [
-    { label: 'Wait for Quote Section',    waitTarget: '#quotesection',                        waitType: 'element', waitTimeout: 20 },
-    { label: 'Wait for Backdrop to Hide', waitTarget: '.backdrop',                            waitType: 'hidden',  waitTimeout: 15 },
-    { label: 'Wait for KYC Popup',        waitTarget: '#pan_no',                              waitType: 'element', waitTimeout: 10 },
-    { label: 'Wait for Proposal Form',    waitTarget: '#nameCstm',                            waitType: 'element', waitTimeout: 20 },
-    { label: 'Wait for Send Link',        waitTarget: "//span[normalize-space()='Send Link']", waitType: 'element', waitTimeout: 30 },
+    { label: 'Wait for Quote Section',       waitTarget: '#quotesection',                                  waitType: 'element', waitTimeout: 20 },
+    { label: 'Wait for Backdrop to Hide',    waitTarget: '.backdrop',                                      waitType: 'hidden',  waitTimeout: 15 },
+    { label: 'Wait for KYC / PAN field',     waitTarget: '#pan_no',                                        waitType: 'element', waitTimeout: 10 },
+    { label: 'Wait for Proposal Form',       waitTarget: '#nameCstm',                                      waitType: 'element', waitTimeout: 20 },
+    { label: 'Wait for Send Link Button',    waitTarget: "//span[normalize-space()='Send Link']",           waitType: 'element', waitTimeout: 30 },
+    { label: 'Wait for ZeroDep Section',     waitTarget: '#ZeroDepPlanName',                               waitType: 'element', waitTimeout: 10 },
+    { label: 'Wait for Customise Backdrop',  waitTarget: '.backdrop',                                      waitType: 'hidden',  waitTimeout: 20 },
+  ],
+  save_variable: [
+    { label: 'Read TP Insurer Name',         selector: '#previnstp',   value: 'tp_insurer'     },
+    { label: 'Read SAOD Insurer Name',       selector: '#previns',     value: 'saod_insurer'   },
+    { label: 'Read TP Policy Number',        selector: '#TPpolno',     value: 'tp_policy_no'   },
+    { label: 'Read TP End Date',             selector: '#TPpolenddate', value: 'tp_end_date'   },
+    { label: 'Read IDV Min',                 selector: '#sirangeinput', value: 'idv_min'       },
+    { label: 'Read Auto-Selected City',      selector: '#pincode',     value: 'selected_city'  },
+  ],
+  calculate: [
+    { label: 'TP Start Date (End − 5 yrs)', value: '{{tp_end_date}}',  selector: 'date_subtract' },
+    { label: 'SAOD End Date (End − 4 yrs)', value: '{{tp_end_date}}',  selector: 'date_subtract' },
+    { label: 'IDV Min + 1',                  value: '{{idv_min}}',      selector: 'number_add'   },
+    { label: 'IDV Max − 1',                  value: '{{idv_max}}',      selector: 'number_subtract' },
+    { label: 'Insurer First 2 Words',        value: '{{tp_insurer}}',   selector: 'text_split'   },
+  ],
+  pin_fallback: [
+    { label: 'Pincode with PIN / PIN 2 fallback', selector: '#pincode', value: 'PIN' },
+  ],
+  try_catch: [
+    { label: 'Fetch → Popup → Retry',         selector: '.swal2-html-container' },
+    { label: 'ZeroDep Silver → Reset retry',  selector: '#ZeroDepPlanName'      },
+    { label: 'Click here → Section Open',     selector: '#ZeroDepPlanName'      },
+  ],
+  human_in_loop: [
+    { label: 'Login / Session Expired',       value: 'Please log in manually then click Resume.' },
+    { label: 'OTP / Captcha Required',        value: 'Please complete the OTP/Captcha then click Resume.' },
   ],
 };
 
@@ -126,21 +222,29 @@ const ICICI_PRESETS: Record<string, Array<{
 const NodeIcon = ({ iName, size = 14 }: { iName: string; size?: number }) => {
   const p = { size };
   switch (iName) {
-    case 'Play':             return <Play {...p} />;
-    case 'FileSpreadsheet': return <FileSpreadsheet {...p} />;
-    case 'Globe':           return <Globe {...p} />;
-    case 'MousePointerClick': return <MousePointerClick {...p} />;
-    case 'Keyboard':        return <Keyboard {...p} />;
-    case 'ListFilter':      return <ListFilter {...p} />;
-    case 'CheckSquare':     return <CheckSquare {...p} />;
-    case 'Timer':           return <Timer {...p} />;
-    case 'Code':            return <Code {...p} />;
-    case 'GitBranch':       return <GitBranch {...p} />;
-    case 'RefreshCw':       return <RefreshCw {...p} />;
-    case 'Download':        return <Download {...p} />;
-    case 'Layers':          return <Layers {...p} />;
-    case 'Monitor':         return <Monitor {...p} />;
-    default:                return <Play {...p} />;
+    case 'Play':               return <Play {...p} />;
+    case 'FileSpreadsheet':    return <FileSpreadsheet {...p} />;
+    case 'Globe':              return <Globe {...p} />;
+    case 'MousePointerClick':  return <MousePointerClick {...p} />;
+    case 'Keyboard':           return <Keyboard {...p} />;
+    case 'ListFilter':         return <ListFilter {...p} />;
+    case 'CheckSquare':        return <CheckSquare {...p} />;
+    case 'Timer':              return <Timer {...p} />;
+    case 'Code':               return <Code {...p} />;
+    case 'GitBranch':          return <GitBranch {...p} />;
+    case 'RefreshCw':          return <RefreshCw {...p} />;
+    case 'Download':           return <Download {...p} />;
+    case 'Layers':             return <Layers {...p} />;
+    case 'Monitor':            return <Monitor {...p} />;
+    case 'Database':           return <Database {...p} />;
+    case 'Calculator':         return <Calculator {...p} />;
+    case 'UserCheck':          return <UserCheck {...p} />;
+    case 'Shield':             return <Shield {...p} />;
+    case 'Shuffle':            return <Shuffle {...p} />;
+    case 'AlertTriangle':      return <AlertTriangle {...p} />;
+    case 'Variable':           return <Variable {...p} />;
+    case 'SplitSquareHorizontal': return <SplitSquareHorizontal {...p} />;
+    default:                   return <Play {...p} />;
   }
 };
 
@@ -149,12 +253,14 @@ const NodeIcon = ({ iName, size = 14 }: { iName: string; size?: number }) => {
 // ─────────────────────────────────────────────
 const catStyle = (category: string) => {
   switch (category) {
-    case 'trigger':  return { header: 'bg-green-500/8 border-b border-green-500/15',   icon: 'bg-green-500/15 text-green-600 dark:text-green-400'   };
-    case 'action':   return { header: 'bg-blue-500/8 border-b border-blue-500/15',     icon: 'bg-blue-500/15 text-blue-600 dark:text-blue-400'     };
-    case 'data':     return { header: 'bg-teal-500/8 border-b border-teal-500/15',     icon: 'bg-teal-500/15 text-teal-600 dark:text-teal-400'     };
-    case 'logic':    return { header: 'bg-purple-500/8 border-b border-purple-500/15', icon: 'bg-purple-500/15 text-purple-600 dark:text-purple-400' };
-    case 'advanced': return { header: 'bg-amber-500/8 border-b border-amber-500/15',   icon: 'bg-amber-500/15 text-amber-600 dark:text-amber-400'   };
-    default:         return { header: 'bg-muted/50 border-b border-border',             icon: 'bg-muted text-muted-foreground'                       };
+    case 'trigger':   return { header: 'bg-green-500/8 border-b border-green-500/15',    icon: 'bg-green-500/15 text-green-600 dark:text-green-400'     };
+    case 'action':    return { header: 'bg-blue-500/8 border-b border-blue-500/15',      icon: 'bg-blue-500/15 text-blue-600 dark:text-blue-400'       };
+    case 'data':      return { header: 'bg-teal-500/8 border-b border-teal-500/15',      icon: 'bg-teal-500/15 text-teal-600 dark:text-teal-400'       };
+    case 'logic':     return { header: 'bg-purple-500/8 border-b border-purple-500/15',  icon: 'bg-purple-500/15 text-purple-600 dark:text-purple-400'  };
+    case 'advanced':  return { header: 'bg-amber-500/8 border-b border-amber-500/15',    icon: 'bg-amber-500/15 text-amber-600 dark:text-amber-400'     };
+    case 'memory':    return { header: 'bg-indigo-500/8 border-b border-indigo-500/15',  icon: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400'  };
+    case 'safety':    return { header: 'bg-rose-500/8 border-b border-rose-500/15',      icon: 'bg-rose-500/15 text-rose-600 dark:text-rose-400'        };
+    default:          return { header: 'bg-muted/50 border-b border-border',              icon: 'bg-muted text-muted-foreground'                         };
   }
 };
 
@@ -166,41 +272,59 @@ const statusRing = (s?: string) => {
 };
 
 // ─────────────────────────────────────────────
-// AUTOMATION NODE — No handles/wires
+// AUTOMATION NODE
 // ─────────────────────────────────────────────
 const AutomationNode = ({ data, selected }: { data: AutomationNodeData; selected: boolean }) => {
   const s   = catStyle(data.category);
   const cfg = data.config || {};
 
   const getPreview = () => {
-    if (data.nodeType === 'open_url')      return cfg.url           || 'No URL set';
-    if (data.nodeType === 'loop_excel')    return cfg.fileName      || 'No file mapped';
-    if (data.nodeType === 'type_text')     return cfg.selector ? `${cfg.selector} → ${(cfg.value || '').substring(0, 18)}` : 'No selector';
-    if (data.nodeType === 'click')         return cfg.selector      || 'No selector';
-    if (data.nodeType === 'select')        return cfg.selector ? `${cfg.selector} → ${cfg.value || '?'}` : 'No selector';
-    if (data.nodeType === 'checkbox') {
-      const actionLabel =
-        cfg.checkAction === 'ensure_checked'   ? '✓ Ensure ON'  :
-        cfg.checkAction === 'ensure_unchecked' ? '✗ Ensure OFF' : '⇄ Toggle';
-      return cfg.selector ? `${actionLabel} · ${cfg.selector}` : actionLabel;
+    switch (data.nodeType) {
+      case 'open_url':       return cfg.url || 'No URL set';
+      case 'loop_excel':     return cfg.fileName || 'No file mapped';
+      case 'type_text':      return cfg.selector ? `${cfg.selector} → ${(cfg.value || '').substring(0, 20)}` : 'No selector';
+      case 'click':          return cfg.selector || 'No selector';
+      case 'select':         return cfg.selector ? `${cfg.selector} → ${cfg.value || '?'}` : 'No selector';
+      case 'checkbox': {
+        const a = cfg.checkAction === 'ensure_checked' ? '✓ ON' : cfg.checkAction === 'ensure_unchecked' ? '✗ OFF' : '⇄ Toggle';
+        return cfg.selector ? `${a} · ${cfg.selector}` : a;
+      }
+      case 'wait':           return cfg.waitType === 'time' ? `Wait ${cfg.waitTimeout}s` : (cfg.waitTarget || 'No target');
+      case 'if_else':        return `IF ${cfg.conditionLeft || '?'} ${cfg.conditionOperator || ''} ${cfg.conditionRight || ''}`.trim();
+      case 'loop':           return `Repeat ${cfg.loopCount || 3}×`;
+      case 'js_inject':      return cfg.jsCode ? cfg.jsCode.substring(0, 30) + '…' : 'No code';
+      case 'extract':        return cfg.extractFields ? cfg.extractFields.split('\n')[0] : 'No fields';
+      case 'switch_iframe':  return cfg.action === 'exit' ? 'Exit → Main Page' : `Enter: ${cfg.selector || '—'}`;
+      case 'switch_tab':     return `Tab: ${cfg.action || 'next'}`;
+      case 'press_key':      return cfg.selector ? `${cfg.value || 'ENTER'} on ${cfg.selector}` : `Key: ${cfg.value || 'ENTER'}`;
+
+      // ── NEW NODES ──
+      case 'save_variable':
+        return cfg.variableName ? `{{${cfg.variableName}}} ← ${cfg.selector || cfg.variableSource || '?'}` : 'No variable name';
+      case 'calculate':
+        return cfg.calcOutputVar
+          ? `{{${cfg.calcOutputVar}}} = ${cfg.calcInput || '?'} ${cfg.calcOperation?.replace('_', ' ') || ''} ${cfg.calcOperand || ''}`
+          : 'No output variable';
+      case 'try_catch':
+        return cfg.catchCondition ? `CATCH: ${cfg.catchCondition}` : 'No catch condition';
+      case 'human_in_loop':
+        return cfg.hitlMessage ? cfg.hitlMessage.substring(0, 40) + '…' : 'No message set';
+      case 'pin_fallback':
+        return cfg.pinPrimaryColumn ? `PIN: {{${cfg.pinPrimaryColumn}}} / {{${cfg.pinSecondaryColumn || '—'}}}` : 'Not configured';
+      case 'logout_detect':
+        return cfg.logoutDetectSelector || 'No selector set';
+
+      default: return data.label;
     }
-    if (data.nodeType === 'wait')          return cfg.waitType === 'time' ? `Wait ${cfg.waitTimeout}s` : (cfg.waitTarget || 'No target');
-    if (data.nodeType === 'if_else')       return cfg.condition     || 'No condition';
-    if (data.nodeType === 'loop')          return `Repeat ${cfg.loopCount || 3} times`;
-    if (data.nodeType === 'js_inject')     return cfg.jsCode ? cfg.jsCode.substring(0, 28) + '…' : 'No code';
-    if (data.nodeType === 'extract')       return cfg.extractFields ? cfg.extractFields.split('\n')[0] : 'No fields';
-    if (data.nodeType === 'switch_iframe') return cfg.action === 'exit' ? 'Exit → Main Page' : `Enter: ${cfg.selector || 'No selector'}`;
-    if (data.nodeType === 'switch_tab')    return `Tab: ${cfg.action || 'next'}`;
-    if (data.nodeType === 'press_key')     return cfg.selector ? `${cfg.value || 'ENTER'} on ${cfg.selector}` : `Key: ${cfg.value || 'ENTER'}`;
-    return data.label;
   };
 
   const techBadge = cfg.technique && !['send_keys', 'standard_click', 'standard'].includes(cfg.technique)
-    ? cfg.technique.replace('_', ' ') : null;
+    ? cfg.technique.replace(/_/g, ' ') : null;
+  const fillBadge = cfg.fillStrategy === 'force_fill' ? 'force-fill' : cfg.fillStrategy === 'fill_if_empty' ? 'if-empty' : null;
 
   return (
     <div className={`
-      bg-card border rounded-xl shadow-sm w-[260px] overflow-hidden transition-all duration-150
+      bg-card border rounded-xl shadow-sm w-[270px] overflow-hidden transition-all duration-150
       ${selected ? 'border-primary shadow-md shadow-primary/10' : 'border-border hover:border-border/80 hover:shadow-md'}
       ${statusRing(data.status)}
     `}>
@@ -227,21 +351,13 @@ const AutomationNode = ({ data, selected }: { data: AutomationNodeData; selected
         <div className="bg-muted/60 rounded-md px-2 py-1 text-[10px] font-mono text-muted-foreground truncate border border-border/40">
           {getPreview()}
         </div>
-
         <div className="flex items-center gap-1.5 flex-wrap">
-          {techBadge && (
-            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">{techBadge}</span>
-          )}
-          {(cfg.retries ?? 0) > 0 && (
-            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400">↺ {cfg.retries}x</span>
-          )}
-          {cfg.onError === 'continue' && (
-            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400">skip-on-fail</span>
-          )}
-          {/* State-aware badge for checkbox */}
-          {data.nodeType === 'checkbox' && cfg.checkAction !== 'toggle' && (
-            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">state-aware</span>
-          )}
+          {techBadge && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">{techBadge}</span>}
+          {fillBadge && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">{fillBadge}</span>}
+          {(cfg.retries ?? 0) > 0 && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400">↺ {cfg.retries}×</span>}
+          {cfg.onError === 'continue' && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400">skip-on-fail</span>}
+          {cfg.scrollIntoView && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">scroll</span>}
+          {data.nodeType === 'checkbox' && cfg.checkAction !== 'toggle' && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">state-aware</span>}
           {(cfg.waitAfterMs ?? 0) > 0 && (
             <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center gap-0.5">
               <Timer size={8} /> +{cfg.waitAfterMs}ms
@@ -264,10 +380,11 @@ const nodeTypes = { automation: AutomationNode };
 const getId = () => `node_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
 // ─────────────────────────────────────────────
-// JSON EXPORT BUILDER
+// JSON EXPORT BUILDER — full Python runner schema
 // ─────────────────────────────────────────────
 function buildWorkflowJSON(nodes: Node[]) {
   const allColumns = new Set<string>();
+  const allVars    = new Set<string>();
 
   const ordered = [...nodes]
     .filter(n => (n.data as unknown as AutomationNodeData).sequence > 0)
@@ -277,9 +394,13 @@ function buildWorkflowJSON(nodes: Node[]) {
       return sa - sb;
     });
 
-  const extractCols = (str: string) => {
+  const extractTokens = (str: string) => {
     if (!str) return;
-    for (const m of str.matchAll(/\{\{([^}]+)\}\}/g)) allColumns.add(m[1]);
+    for (const m of str.matchAll(/\{\{([^}]+)\}\}/g)) {
+      const tok = m[1];
+      if (tok === tok.toUpperCase() || tok.includes(' ')) allColumns.add(tok);
+      else allVars.add(tok);
+    }
   };
 
   const steps = ordered.map((node) => {
@@ -293,6 +414,8 @@ function buildWorkflowJSON(nodes: Node[]) {
       label:         d.label,
       notes:         c.notes || '',
       wait_after_ms: c.waitAfterMs ?? 0,
+      scroll_into_view: c.scrollIntoView ?? false,
+      scroll_block:  c.scrollBlock || 'center',
       error_handling: {
         on_error:       c.onError || 'stop',
         retries:        Number(c.retries ?? 0),
@@ -300,54 +423,144 @@ function buildWorkflowJSON(nodes: Node[]) {
       },
     };
 
-    if (d.nodeType === 'trigger')     return base;
-    if (d.nodeType === 'open_url')    return { ...base, url: c.url };
-    if (d.nodeType === 'loop_excel')  return { ...base, file: c.fileName || '[provided_by_runner]', columns: [] };
-    if (d.nodeType === 'extract')     return { ...base, fields: c.extractFields, output_file: c.outputFile };
-    if (d.nodeType === 'wait')        return { ...base, wait_type: c.waitType, target: c.waitTarget, timeout_seconds: Number(c.waitTimeout ?? 10) };
-    if (d.nodeType === 'if_else')     return { ...base, condition: c.condition };
-    if (d.nodeType === 'loop')        return { ...base, repeat: Number(c.loopCount ?? 3) };
+    // Core nodes
+    if (d.nodeType === 'trigger')    return base;
+    if (d.nodeType === 'open_url')   return { ...base, url: c.url };
+    if (d.nodeType === 'loop_excel') return { ...base, file: c.fileName || '[provided_by_runner]', columns: Array.from(allColumns) };
+    if (d.nodeType === 'extract')    return { ...base, fields: c.extractFields, output_file: c.outputFile };
+
+    if (d.nodeType === 'wait')       return {
+      ...base,
+      wait_type:       c.waitType,
+      target:          c.waitTarget,
+      timeout_seconds: Number(c.waitTimeout ?? 10),
+    };
+
+    if (d.nodeType === 'if_else')    return {
+      ...base,
+      condition: {
+        type:     c.conditionType || 'element_exists',
+        left:     c.conditionLeft || '',
+        operator: c.conditionOperator || 'is_empty',
+        right:    c.conditionRight || '',
+      },
+      true_branch:  c.trueBranch  || '',
+      false_branch: c.falseBranch || '',
+    };
+
+    if (d.nodeType === 'loop')       return { ...base, repeat: Number(c.loopCount ?? 3) };
+
     if (d.nodeType === 'js_inject') {
-      extractCols(c.jsCode || '');
-      return { ...base, code: c.jsCode, excel_columns_used: Array.from(allColumns) };
+      extractTokens(c.jsCode || '');
+      return { ...base, code: c.jsCode };
     }
+
     if (d.nodeType === 'switch_iframe') return { ...base, action: c.action || 'enter', selector: c.selector };
     if (d.nodeType === 'switch_tab')    return { ...base, action: c.action || 'next' };
     if (d.nodeType === 'press_key')     return { ...base, value: c.value || 'ENTER', selector: c.selector };
 
-    if (d.nodeType === 'checkbox') {
-      return {
-        ...base,
-        selector:       c.selector,
-        action:         c.checkAction || 'ensure_checked',  // engine reads this field
-        state_selector: c.stateSelector || '',              // optional separate state element
-        technique:      c.technique,
-      };
-    }
+    if (d.nodeType === 'checkbox')   return {
+      ...base,
+      selector:       c.selector,
+      action:         c.checkAction || 'ensure_checked',
+      state_selector: c.stateSelector || '',
+      technique:      c.technique,
+    };
 
     if (['type_text', 'click', 'select'].includes(d.nodeType)) {
-      extractCols(c.value || '');
-      const colsUsed: string[] = [];
-      (c.value || '').replace(/\{\{([^}]+)\}\}/g, (_, m) => { colsUsed.push(m); return ''; });
+      extractTokens(c.value || '');
+      extractTokens(c.selector || '');
       return {
         ...base,
         selector:  c.selector,
         value:     c.value,
         technique: c.technique,
-        ...(d.nodeType === 'select' && c.technique === 'mat_autocomplete' ? { search_first_n_words: 2 } : {}),
-        excel_columns_used: Array.from(new Set(colsUsed)),
+        fill_strategy: c.fillStrategy || 'force_fill',
+        ...(d.nodeType === 'select' ? {
+          select_by:       c.selectBy || (c.technique === 'mat_autocomplete' ? 'mat_autocomplete' : 'value'),
+          mat_words:       c.matWords ?? 2,
+        } : {}),
       };
     }
+
+    // ── NEW NODES ──
+
+    if (d.nodeType === 'save_variable') {
+      allVars.add(c.variableName || '');
+      return {
+        ...base,
+        selector:       c.selector,
+        variable_name:  c.variableName,
+        source:         c.variableSource || 'element_value',
+        attribute:      c.variableAttr || '',
+      };
+    }
+
+    if (d.nodeType === 'calculate') {
+      extractTokens(c.calcInput || '');
+      allVars.add(c.calcOutputVar || '');
+      return {
+        ...base,
+        operation:   c.calcOperation,
+        input:       c.calcInput,
+        operand:     c.calcOperand,
+        unit:        c.calcUnit || 'years',
+        split_index: c.calcSplitIndex ?? 0,
+        output_var:  c.calcOutputVar,
+      };
+    }
+
+    if (d.nodeType === 'try_catch') {
+      return {
+        ...base,
+        try_step_ids:        c.tryStepIds || [],
+        catch_condition:     c.catchCondition,
+        catch_condition_type: c.catchConditionType || 'element_appears',
+        fallback_step_ids:   c.fallbackStepIds || [],
+      };
+    }
+
+    if (d.nodeType === 'human_in_loop') {
+      return {
+        ...base,
+        message:          c.hitlMessage,
+        trigger:          c.hitlTrigger || 'always',
+        trigger_selector: c.hitlTriggerSelector || '',
+        trigger_variable: c.hitlTriggerVariable || '',
+      };
+    }
+
+    if (d.nodeType === 'pin_fallback') {
+      return {
+        ...base,
+        pin_primary_column:   c.pinPrimaryColumn,
+        pin_secondary_column: c.pinSecondaryColumn,
+        target_selector:      c.pinTargetSelector || '#pincode',
+        submit_selector:      c.pinSubmitSelector || '#buypol',
+        error_selector:       c.pinErrorSelector  || '.swal2-html-container',
+        error_text_match:     c.pinErrorTextMatch  || 'enter customer city',
+      };
+    }
+
+    if (d.nodeType === 'logout_detect') {
+      return {
+        ...base,
+        logout_selector: c.logoutDetectSelector || "//button[contains(@class,'cstmbtn') and contains(.,'LOGIN')]",
+        message:         c.logoutMessage || 'You have been logged out. Please log in manually and click OK.',
+      };
+    }
+
     return base;
   });
 
   return {
     meta: {
-      workflow_version:  '2.0',
-      execution_mode:    'sequential_by_step_number',
-      created:           new Date().toISOString(),
-      total_steps:       steps.length,
-      excel_columns_required: Array.from(allColumns),
+      workflow_version:        '3.0',
+      execution_mode:          'sequential_by_step_number',
+      created:                 new Date().toISOString(),
+      total_steps:             steps.length,
+      excel_columns_required:  Array.from(allColumns),
+      runtime_variables_used:  Array.from(allVars).filter(Boolean),
     },
     steps,
   };
@@ -365,20 +578,19 @@ const ConfigPanel = ({
   setAvailableColumns: (cols: string[]) => void;
 }) => {
   const [showPresets, setShowPresets] = useState(false);
-  
-  // 🔴 FIX 1: Local state for typing sequence without triggering update immediately
   const [localSeq, setLocalSeq] = useState<string | number>('');
 
-  // 🔴 FIX 2: Sync local state when a new node is clicked
+  // 🔴 THE FIX: Dependency list mein sirf ID rakhi hai.
+  // Ab React Flow aapke typing ke beech mein kabhi tang nahi aadayega!
   useEffect(() => {
     if (selectedNode) {
       setLocalSeq((selectedNode.data as unknown as AutomationNodeData).sequence || '');
     }
-  }, [selectedNode]);
+  }, [selectedNode?.id]);
 
   if (!selectedNode) {
     return (
-      <aside className="w-[290px] border-l bg-card flex flex-col items-center justify-center text-center text-muted-foreground p-6 flex-shrink-0">
+      <aside className="w-[300px] border-l bg-card flex flex-col items-center justify-center text-center text-muted-foreground p-6 flex-shrink-0">
         <Settings2 size={36} className="mb-3 opacity-15" />
         <p className="text-sm font-medium">No block selected</p>
         <p className="text-xs mt-1 text-muted-foreground/70">Click any block on the canvas to configure it</p>
@@ -411,22 +623,35 @@ const ConfigPanel = ({
     reader.readAsArrayBuffer(file);
   };
 
-  const applyPreset = (preset: (typeof ICICI_PRESETS)[string][number]) => {
-    if (preset.selector   !== undefined) updateCfg('selector',   preset.selector);
-    if (preset.value      !== undefined) updateCfg('value',      preset.value);
-    if (preset.technique)                updateCfg('technique',  preset.technique as never);
-    if (preset.waitTarget)               updateCfg('waitTarget', preset.waitTarget);
-    if (preset.waitType)                 updateCfg('waitType',   preset.waitType as never);
-    if (preset.waitTimeout)              updateCfg('waitTimeout',preset.waitTimeout);
+  const applyPreset = (preset: Record<string, unknown>) => {
+    if (preset.selector !== undefined) updateCfg('selector', preset.selector as string);
+    if (preset.value    !== undefined) {
+      if (['save_variable', 'calculate'].includes(d.nodeType)) {
+        if (d.nodeType === 'save_variable') updateCfg('variableName', preset.value as string);
+        if (d.nodeType === 'calculate')     updateCfg('calcInput',    preset.value as string);
+      } else {
+        updateCfg('value', preset.value as string);
+      }
+    }
+    if (preset.technique)    updateCfg('technique',    preset.technique as never);
+    if (preset.waitTarget)   updateCfg('waitTarget',   preset.waitTarget as string);
+    if (preset.waitType)     updateCfg('waitType',     preset.waitType as never);
+    if (preset.waitTimeout)  updateCfg('waitTimeout',  preset.waitTimeout as number);
+    if (preset.fillStrategy) updateCfg('fillStrategy', preset.fillStrategy as never);
+    if (preset.scrollIntoView !== undefined) updateCfg('scrollIntoView', preset.scrollIntoView as boolean);
     setShowPresets(false);
   };
 
-  const insertColumn = (col: string) => updateCfg('value', (cfg.value || '') + `{{${col}}}`);
-  const hasPresets   = ICICI_PRESETS[d.nodeType];
-  const s            = catStyle(d.category);
+  const insertColumn = (col: string) => {
+    if (d.nodeType === 'calculate') updateCfg('calcInput', (cfg.calcInput || '') + `{{${col}}}`);
+    else updateCfg('value', (cfg.value || '') + `{{${col}}}`);
+  };
+
+  const hasPresets = ICICI_PRESETS[d.nodeType];
+  const s = catStyle(d.category);
 
   return (
-    <aside className="w-[290px] border-l bg-card flex flex-col h-full overflow-hidden flex-shrink-0">
+    <aside className="w-[300px] border-l bg-card flex flex-col h-full overflow-hidden flex-shrink-0">
       {/* Header */}
       <div className={`px-4 py-3 border-b flex items-center gap-2.5 flex-shrink-0 ${s.header}`}>
         <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${s.icon}`}>
@@ -446,22 +671,22 @@ const ConfigPanel = ({
         </Field>
 
         {/* Step Number */}
-        <Field label="Step Number" hint="Execution order: lowest runs first (1, 2, 3…)">
+        <Field label="Step Number" hint="Type number and click anywhere outside to apply">
           <input
             type="number" min={1}
             value={localSeq}
-            onChange={e => setLocalSeq(e.target.value)} // 🔴 Sirf local type hoga
-            onBlur={e => {
-              // 🔴 OUTFOCUS: Bahar click karne par hi asol save hoga aur collision check hoga
-              const val = parseInt(e.target.value as string);
-              updateNodeData(selectedNode.id, { sequence: isNaN(val) ? 0 : val });
+            onChange={e => setLocalSeq(e.target.value)}
+            onBlur={e => { 
+              const v = parseInt(e.target.value as string); 
+              const finalSeq = isNaN(v) ? 0 : v;
+              // 🔴 THE FIX: Sirf tabhi Data save hoga jab actual me number badla ho
+              if (finalSeq !== (selectedNode.data as unknown as AutomationNodeData).sequence) {
+                updateNodeData(selectedNode.id, { sequence: finalSeq }); 
+              }
             }}
-            onKeyDown={e => {
-              // 🔴 Enter dabane par bhi automatically outfocus ho jayega
-              if (e.key === 'Enter') e.currentTarget.blur();
-            }}
-            className="cp-input font-bold text-blue-600 dark:text-blue-400"
-            placeholder="e.g. 1"
+            onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+            className="cp-input text-lg font-black text-center py-2 text-blue-600 dark:text-blue-400 border-blue-200"
+            placeholder="e.g. 10"
           />
         </Field>
 
@@ -471,21 +696,20 @@ const ConfigPanel = ({
             <p className="text-[10px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400 flex items-center gap-1.5">
               <Timer size={11} /> Wait After This Step
             </p>
-            <Field label="Delay (milliseconds)" hint="0 = no extra wait after this step.">
+            <Field label="Delay (milliseconds)">
               <div className="flex items-center gap-2">
                 <input type="number" min={0} step={100} value={cfg.waitAfterMs ?? 0}
-                  onChange={e => updateCfg('waitAfterMs', Number(e.target.value))}
-                  className="cp-input" placeholder="0" />
-                <span className="text-[10px] text-muted-foreground whitespace-nowrap">ms</span>
+                  onChange={e => updateCfg('waitAfterMs', Number(e.target.value))} className="cp-input" />
+                <span className="text-[10px] text-muted-foreground">ms</span>
               </div>
             </Field>
             <div className="flex flex-wrap gap-1">
-              {[0, 500, 1000, 2000, 3000].map(ms => (
+              {[0, 500, 1000, 2000, 3000, 5000].map(ms => (
                 <button key={ms} onClick={() => updateCfg('waitAfterMs', ms)}
                   className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${
                     (cfg.waitAfterMs ?? 0) === ms
                       ? 'bg-sky-500/20 border-sky-500/40 text-sky-700 dark:text-sky-300'
-                      : 'border-border text-muted-foreground hover:border-sky-500/30 hover:text-sky-600'
+                      : 'border-border text-muted-foreground hover:border-sky-500/30'
                   }`}>
                   {ms === 0 ? 'None' : `${ms}ms`}
                 </button>
@@ -531,12 +755,12 @@ const ConfigPanel = ({
               <ChevronDown size={11} className={`ml-auto transition-transform ${showPresets ? 'rotate-180' : ''}`} />
             </button>
             {showPresets && (
-              <div className="mt-1.5 border border-border rounded-lg overflow-hidden shadow-sm">
-                {ICICI_PRESETS[d.nodeType].map((p, i) => (
+              <div className="mt-1.5 border border-border rounded-lg overflow-hidden shadow-sm max-h-48 overflow-y-auto">
+                {(ICICI_PRESETS[d.nodeType] as any[]).map((p, i) => (
                   <button key={i} onClick={() => applyPreset(p)}
                     className="w-full text-left px-3 py-2 border-b border-border last:border-0 hover:bg-primary/5 transition-colors">
                     <div className="text-[11px] font-medium">{p.label}</div>
-                    {p.selector && <div className="text-[10px] text-muted-foreground font-mono truncate">{p.selector}</div>}
+                    {p.selector ? <div className="text-[10px] text-muted-foreground font-mono truncate">{p.selector}</div> : null}
                   </button>
                 ))}
               </div>
@@ -544,7 +768,9 @@ const ConfigPanel = ({
           </div>
         )}
 
-        {/* Open URL */}
+        {/* ═══════════════════════════════════════════
+            OPEN URL
+        ═══════════════════════════════════════════ */}
         {d.nodeType === 'open_url' && (
           <Field label="Website URL">
             <input type="text" placeholder="https://…" value={cfg.url || ''}
@@ -552,65 +778,137 @@ const ConfigPanel = ({
           </Field>
         )}
 
-        {/* Selector — shared by interaction nodes (NOT checkbox, handled separately) */}
+        {/* ═══════════════════════════════════════════
+            SELECTOR — shared for click / type / select
+        ═══════════════════════════════════════════ */}
         {['type_text', 'click', 'select'].includes(d.nodeType) && (
-          <Field label="Target Selector" hint="CSS selector or XPath">
-            <input type="text" placeholder="e.g. #txtreg or //input[@id='carreg']"
-              value={cfg.selector || ''} onChange={e => updateCfg('selector', e.target.value)}
-              className="cp-input font-mono text-[11px]" />
-          </Field>
-        )}
-
-        {/* Value */}
-        {['type_text', 'select'].includes(d.nodeType) && (
-          <Field label="Value">
-            {availableColumns.length > 0 && (
-              <div className="flex flex-wrap gap-1 mb-2">
-                {availableColumns.map(col => (
-                  <button key={col} onClick={() => insertColumn(col)}
-                    className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition-colors cursor-pointer border border-purple-500/20">
-                    {`{{${col}}}`}
-                  </button>
-                ))}
-              </div>
-            )}
-            <textarea placeholder={availableColumns.length > 0 ? 'Type value or click a column chip…' : 'Type value or add a Loop Excel block…'}
-              value={cfg.value || ''} onChange={e => updateCfg('value', e.target.value)} className="cp-textarea" />
-            {availableColumns.length === 0 && (
-              <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-1">
-                <AlertCircle size={10} /> Add a Loop Excel block to map dynamic data.
-              </p>
-            )}
-          </Field>
-        )}
-
-        {/* ── CHECKBOX / TOGGLE — full smart UI ── */}
-        {d.nodeType === 'checkbox' && (
-          <div className="space-y-3">
-
-            {/* Click target selector */}
-            <Field label="Click Target (selector)" hint="Element to click — can be a <label> or the input itself">
-              <input type="text" placeholder="e.g. label[for='switch'] or #myCheckbox"
+          <>
+            <Field label="Target Selector" hint="CSS selector or XPath">
+              <input type="text" placeholder="e.g. #txtreg or //input[@id='carreg']"
                 value={cfg.selector || ''} onChange={e => updateCfg('selector', e.target.value)}
                 className="cp-input font-mono text-[11px]" />
             </Field>
 
-            {/* Action */}
+            {/* Scroll into view */}
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Scroll Into View</span>
+              <div className="flex items-center gap-2">
+                <button onClick={() => updateCfg('scrollIntoView', !cfg.scrollIntoView)}
+                  className={`w-8 h-4 rounded-full transition-all relative ${cfg.scrollIntoView ? 'bg-primary' : 'bg-muted border border-border'}`}>
+                  <div className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition-all ${cfg.scrollIntoView ? 'left-4' : 'left-0.5'}`} />
+                </button>
+                {cfg.scrollIntoView && (
+                  <select className="cp-select w-20" value={cfg.scrollBlock || 'center'} onChange={e => updateCfg('scrollBlock', e.target.value as never)}>
+                    <option value="start">start</option>
+                    <option value="center">center</option>
+                    <option value="end">end</option>
+                  </select>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ═══════════════════════════════════════════
+            VALUE + FILL STRATEGY (type_text / select)
+        ═══════════════════════════════════════════ */}
+        {['type_text', 'select'].includes(d.nodeType) && (
+          <>
+            <Field label="Value">
+              {availableColumns.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {availableColumns.map(col => (
+                    <button key={col} onClick={() => insertColumn(col)}
+                      className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition-colors cursor-pointer border border-purple-500/20">
+                      {`{{${col}}}`}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <textarea placeholder="Type value or click a column chip…"
+                value={cfg.value || ''} onChange={e => updateCfg('value', e.target.value)} className="cp-textarea" />
+            </Field>
+
+            {/* Fill Strategy — only for type_text */}
+            {d.nodeType === 'type_text' && (
+              <Field label="Fill Strategy" hint="When to fill vs skip the field">
+                <div className="grid grid-cols-1 gap-1">
+                  {([
+                    { value: 'force_fill',      label: '⚡ Force Fill', desc: 'Always clear & type (use for Name, Address, PIN)' },
+                    { value: 'fill_if_empty',   label: '🔍 Fill if Empty', desc: 'Skips if already has a value (safe for auto-fetched fields)' },
+                    { value: 'fill_if_zero_or_na', label: '0️⃣ Fill if 0 / NA', desc: 'Fills if empty, "0", or "NA" (original logic)' },
+                  ] as const).map(opt => (
+                    <button key={opt.value} onClick={() => updateCfg('fillStrategy', opt.value)}
+                      className={`text-left px-3 py-2 rounded-lg border transition-all ${
+                        (cfg.fillStrategy || 'fill_if_zero_or_na') === opt.value
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:border-border/80 hover:bg-muted/40'
+                      }`}>
+                      <div className="text-[11px] font-semibold">{opt.label}</div>
+                      <div className="text-[10px] text-muted-foreground">{opt.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            )}
+          </>
+        )}
+
+        {/* ═══════════════════════════════════════════
+            SELECT — extra options
+        ═══════════════════════════════════════════ */}
+        {d.nodeType === 'select' && (
+          <div className="space-y-3 pt-1 border-t border-border/50">
+            <Field label="Select Method">
+              <div className="grid grid-cols-2 gap-1.5">
+                {([
+                  { value: 'value',           label: 'By Value',        desc: 'option value="0"'     },
+                  { value: 'text',            label: 'By Visible Text',  desc: 'option text "Silver"' },
+                  { value: 'mat_autocomplete', label: 'Material Autocomplete', desc: 'Type & click option' },
+                  { value: 'index',           label: 'By Index',         desc: '0-based position'    },
+                ] as const).map(opt => (
+                  <button key={opt.value} onClick={() => updateCfg('selectBy', opt.value)}
+                    className={`text-left p-2 rounded-lg border transition-all ${
+                      (cfg.selectBy || 'value') === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
+                    }`}>
+                    <div className="text-[10px] font-semibold">{opt.label}</div>
+                    <div className="text-[9px] text-muted-foreground">{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </Field>
+            {cfg.selectBy === 'mat_autocomplete' && (
+              <Field label="Search First N Words" hint="Python uses first 2 words to search autocomplete">
+                <input type="number" min={1} max={5} value={cfg.matWords ?? 2}
+                  onChange={e => updateCfg('matWords', Number(e.target.value))} className="cp-input" />
+              </Field>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════
+            CHECKBOX
+        ═══════════════════════════════════════════ */}
+        {d.nodeType === 'checkbox' && (
+          <div className="space-y-3">
+            <Field label="Click Target (selector)" hint="Element to click — label or input">
+              <input type="text" placeholder="e.g. label[for='switch']"
+                value={cfg.selector || ''} onChange={e => updateCfg('selector', e.target.value)}
+                className="cp-input font-mono text-[11px]" />
+            </Field>
             <Field label="Desired Action">
               <div className="grid grid-cols-1 gap-1.5">
                 {([
-                  { value: 'ensure_checked',   icon: '✅', title: 'Ensure ON (check)',   desc: 'Clicks only if currently OFF — safe in loops' },
-                  { value: 'ensure_unchecked', icon: '⬜', title: 'Ensure OFF (uncheck)', desc: 'Clicks only if currently ON — safe in loops'  },
-                  { value: 'toggle',           icon: '⇄',  title: 'Always Toggle',        desc: 'Clicks unconditionally — use when you always want to flip' },
+                  { value: 'ensure_checked',   icon: '✅', title: 'Ensure ON',     desc: 'Clicks only if currently OFF' },
+                  { value: 'ensure_unchecked', icon: '⬜', title: 'Ensure OFF',    desc: 'Clicks only if currently ON'  },
+                  { value: 'toggle',           icon: '⇄',  title: 'Always Toggle', desc: 'Always click regardless of state' },
                 ] as const).map(opt => (
                   <button key={opt.value} onClick={() => updateCfg('checkAction', opt.value)}
                     className={`text-left px-3 py-2 rounded-lg border transition-all ${
-                      (cfg.checkAction || 'ensure_checked') === opt.value
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-border/80 hover:bg-muted/40'
+                      (cfg.checkAction || 'ensure_checked') === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/40'
                     }`}>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm">{opt.icon}</span>
+                      <span>{opt.icon}</span>
                       <span className="text-[11px] font-semibold">{opt.title}</span>
                     </div>
                     <div className="text-[10px] text-muted-foreground mt-0.5 ml-6">{opt.desc}</div>
@@ -618,34 +916,19 @@ const ConfigPanel = ({
                 ))}
               </div>
             </Field>
-
-            {/* State Selector (advanced — only shown for ensure_* modes) */}
             {(cfg.checkAction || 'ensure_checked') !== 'toggle' && (
-              <div className="bg-indigo-500/5 border border-indigo-500/15 rounded-lg p-3 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
-                  <Info size={11} /> State Element (optional)
-                </p>
-                <p className="text-[10px] text-muted-foreground leading-relaxed">
-                  For custom toggles like <code className="bg-muted px-1 rounded">label[for=&apos;switch&apos;]</code>, the
-                  engine reads state from the <b>hidden input</b>, not the label.
-                  If left blank, state is read from the click-target itself.
-                </p>
-                <Field label="State Selector" hint="Separate element that holds the true checked state (e.g. the hidden input behind a label)">
-                  <input type="text" placeholder="e.g. #switch or input[name='od_toggle']"
-                    value={cfg.stateSelector || ''}
-                    onChange={e => updateCfg('stateSelector', e.target.value)}
-                    className="cp-input font-mono text-[11px]" />
-                </Field>
-                <div className="bg-indigo-500/8 rounded-md p-2 text-[10px] text-indigo-700 dark:text-indigo-300 leading-relaxed">
-                  <b>How it works:</b> Engine checks state via (in order):
-                  <span className="font-mono"> is_selected() → aria-checked → aria-pressed → CSS class → JS .checked → data-* attrs</span>
-                </div>
-              </div>
+              <Field label="State Selector (optional)" hint="The real input behind a label, e.g. #switch">
+                <input type="text" placeholder="e.g. #switch"
+                  value={cfg.stateSelector || ''} onChange={e => updateCfg('stateSelector', e.target.value)}
+                  className="cp-input font-mono text-[11px]" />
+              </Field>
             )}
           </div>
         )}
 
-        {/* Injection Technique — for interaction nodes */}
+        {/* ═══════════════════════════════════════════
+            TECHNIQUE GRID
+        ═══════════════════════════════════════════ */}
         {['type_text', 'click', 'select', 'checkbox'].includes(d.nodeType) && (
           <div className="space-y-2 pt-1 border-t border-border/50">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground pt-1">Injection Technique</p>
@@ -653,7 +936,9 @@ const ConfigPanel = ({
           </div>
         )}
 
-        {/* Loop Excel */}
+        {/* ═══════════════════════════════════════════
+            LOOP EXCEL
+        ═══════════════════════════════════════════ */}
         {d.nodeType === 'loop_excel' && (
           <div className="bg-teal-500/5 border border-teal-500/15 rounded-lg p-3 space-y-2">
             <div className="flex items-center gap-1.5 text-teal-700 dark:text-teal-400">
@@ -661,7 +946,7 @@ const ConfigPanel = ({
               <p className="text-[10px] font-bold uppercase tracking-tight">Local Mapping Mode</p>
             </div>
             <p className="text-[10px] text-muted-foreground leading-relaxed">
-              Select your Excel file to extract column headers. The file is <b>NOT</b> uploaded — only headers are read locally.
+              Select your Excel file to extract column headers locally (not uploaded).
             </p>
             <div>
               <input type="file" accept=".xlsx,.xls,.csv" onChange={handleLocalFileSelect} className="hidden" id="local-excel-mapper" />
@@ -672,7 +957,7 @@ const ConfigPanel = ({
             </div>
             {cfg.fileName && (
               <div className="flex items-center justify-between bg-background rounded-md px-2 py-1.5 border border-teal-500/20">
-                <span className="text-[10px] font-mono text-teal-700 dark:text-teal-400 truncate max-w-[180px]">{cfg.fileName}</span>
+                <span className="text-[10px] font-mono text-teal-700 dark:text-teal-400 truncate max-w-[200px]">{cfg.fileName}</span>
                 <CheckCircle2 size={12} className="text-teal-500 flex-shrink-0" />
               </div>
             )}
@@ -682,7 +967,9 @@ const ConfigPanel = ({
           </div>
         )}
 
-        {/* Wait */}
+        {/* ═══════════════════════════════════════════
+            WAIT
+        ═══════════════════════════════════════════ */}
         {d.nodeType === 'wait' && (
           <>
             <Field label="Wait Type">
@@ -694,7 +981,7 @@ const ConfigPanel = ({
               </select>
             </Field>
             <Field label="Selector / URL keyword" hint="CSS, XPath, or URL fragment">
-              <input type="text" placeholder="#selector or keyword" value={cfg.waitTarget || ''}
+              <input type="text" placeholder="#selector" value={cfg.waitTarget || ''}
                 onChange={e => updateCfg('waitTarget', e.target.value)} className="cp-input font-mono text-[11px]" />
             </Field>
             <Field label="Timeout (seconds)">
@@ -704,20 +991,81 @@ const ConfigPanel = ({
           </>
         )}
 
-        {/* If / Else */}
+        {/* ═══════════════════════════════════════════
+            IF / ELSE — DATA-DRIVEN
+        ═══════════════════════════════════════════ */}
         {d.nodeType === 'if_else' && (
-          <Field label="Condition" hint="e.g. element_exists #popup-ok">
-            <input type="text" placeholder="element_exists #selector" value={cfg.condition || ''}
-              onChange={e => updateCfg('condition', e.target.value)} className="cp-input font-mono text-[11px]" />
-            <p className="text-[10px] text-muted-foreground mt-1">
-              Supported: <code className="bg-muted px-1 rounded">element_exists</code>{' '}
-              <code className="bg-muted px-1 rounded">url_contains</code>{' '}
-              <code className="bg-muted px-1 rounded">text_contains</code>
-            </p>
-          </Field>
+          <div className="space-y-3">
+            <div className="bg-purple-500/5 border border-purple-500/15 rounded-lg p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 mb-3 flex items-center gap-1.5">
+                <GitBranch size={11} /> Condition Builder
+              </p>
+
+              <Field label="Condition Type">
+                <select className="cp-select" value={cfg.conditionType || 'element_exists'}
+                  onChange={e => updateCfg('conditionType', e.target.value as never)}>
+                  <optgroup label="Element-based">
+                    <option value="element_exists">Element exists on page</option>
+                    <option value="element_text_equals">Element text equals</option>
+                    <option value="element_text_contains">Element text contains</option>
+                  </optgroup>
+                  <optgroup label="Variable / Runtime">
+                    <option value="variable_empty">Variable is empty</option>
+                    <option value="variable_equals">Variable equals value</option>
+                    <option value="variable_contains">Variable contains text</option>
+                  </optgroup>
+                  <optgroup label="Page-level">
+                    <option value="url_contains">URL contains text</option>
+                    <option value="page_has_text">Page has text</option>
+                  </optgroup>
+                </select>
+              </Field>
+
+              <Field label="Left side (selector or {{variable}})" hint="e.g. #previnstp or {{tp_insurer}}">
+                <input type="text" placeholder="#selector or {{variable_name}}"
+                  value={cfg.conditionLeft || ''} onChange={e => updateCfg('conditionLeft', e.target.value)}
+                  className="cp-input font-mono text-[11px]" />
+              </Field>
+
+              <Field label="Operator">
+                <select className="cp-select" value={cfg.conditionOperator || 'is_empty'}
+                  onChange={e => updateCfg('conditionOperator', e.target.value as never)}>
+                  <option value="is_empty">is empty</option>
+                  <option value="is_not_empty">is NOT empty</option>
+                  <option value="equals">equals (exact)</option>
+                  <option value="not_equals">does NOT equal</option>
+                  <option value="contains">contains</option>
+                  <option value="not_contains">does NOT contain</option>
+                </select>
+              </Field>
+
+              {!['is_empty', 'is_not_empty'].includes(cfg.conditionOperator || 'is_empty') && (
+                <Field label="Right side (comparison value)">
+                  <input type="text" placeholder="text or {{variable}}"
+                    value={cfg.conditionRight || ''} onChange={e => updateCfg('conditionRight', e.target.value)}
+                    className="cp-input font-mono text-[11px]" />
+                </Field>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="✅ True → Branch label">
+                <input type="text" placeholder="e.g. use_website_data"
+                  value={cfg.trueBranch || ''} onChange={e => updateCfg('trueBranch', e.target.value)}
+                  className="cp-input text-[11px]" />
+              </Field>
+              <Field label="❌ False → Branch label">
+                <input type="text" placeholder="e.g. use_excel_data"
+                  value={cfg.falseBranch || ''} onChange={e => updateCfg('falseBranch', e.target.value)}
+                  className="cp-input text-[11px]" />
+              </Field>
+            </div>
+          </div>
         )}
 
-        {/* Loop N Times */}
+        {/* ═══════════════════════════════════════════
+            LOOP N TIMES
+        ═══════════════════════════════════════════ */}
         {d.nodeType === 'loop' && (
           <Field label="Repeat Count">
             <input type="number" min={1} max={999} value={cfg.loopCount ?? 3}
@@ -725,19 +1073,24 @@ const ConfigPanel = ({
           </Field>
         )}
 
-        {/* JS Injection */}
+        {/* ═══════════════════════════════════════════
+            JS INJECTION
+        ═══════════════════════════════════════════ */}
         {d.nodeType === 'js_inject' && (
           <Field label={<>JavaScript Code <span className="ml-1 text-[9px] bg-amber-500/10 text-amber-600 px-1.5 py-0.5 rounded-full font-bold">ADVANCED</span></>}>
             <textarea value={cfg.jsCode || ''} onChange={e => updateCfg('jsCode', e.target.value)}
-              placeholder={"// Use {{ColumnName}} for Excel data\ndocument.getElementById('txtreg').value = '{{Registration No}}';\n..."}
-              className="cp-textarea min-h-[120px]" />
+              placeholder={"// {{ColumnName}} injects Excel values\nlet el = document.getElementById('sirangeinput');\nel.value = '{{IDV}}';\nel.dispatchEvent(new Event('input', {bubbles: true}));\nel.dispatchEvent(new Event('change', {bubbles: true}));\nel.dispatchEvent(new Event('blur', {bubbles: true}));"}
+              className="cp-textarea min-h-[130px]" />
             <p className="text-[10px] text-muted-foreground mt-1">
-              Use <code className="bg-muted px-1 rounded">{'{{ColumnName}}'}</code> to inject Excel values
+              Use <code className="bg-muted px-1 rounded">{'{{ColumnName}}'}</code> for Excel data,{' '}
+              <code className="bg-muted px-1 rounded">{'{{variable_name}}'}</code> for runtime variables
             </p>
           </Field>
         )}
 
-        {/* Extract */}
+        {/* ═══════════════════════════════════════════
+            EXTRACT
+        ═══════════════════════════════════════════ */}
         {d.nodeType === 'extract' && (
           <>
             <Field label="Fields to Extract" hint="Format: Label: #selector — one per line">
@@ -752,7 +1105,9 @@ const ConfigPanel = ({
           </>
         )}
 
-        {/* Switch Iframe */}
+        {/* ═══════════════════════════════════════════
+            IFRAME / TAB / KEY
+        ═══════════════════════════════════════════ */}
         {d.nodeType === 'switch_iframe' && (
           <>
             <Field label="Action">
@@ -762,15 +1117,14 @@ const ConfigPanel = ({
               </select>
             </Field>
             {cfg.action !== 'exit' && (
-              <Field label="Iframe Selector" hint="CSS selector or XPath for the iframe element">
-                <input type="text" placeholder="e.g. #my-iframe" value={cfg.selector || ''}
+              <Field label="Iframe Selector">
+                <input type="text" placeholder="#my-iframe" value={cfg.selector || ''}
                   onChange={e => updateCfg('selector', e.target.value)} className="cp-input font-mono text-[11px]" />
               </Field>
             )}
           </>
         )}
 
-        {/* Switch Tab */}
         {d.nodeType === 'switch_tab' && (
           <Field label="Action">
             <select className="cp-select" value={cfg.action || 'next'} onChange={e => updateCfg('action', e.target.value)}>
@@ -782,7 +1136,6 @@ const ConfigPanel = ({
           </Field>
         )}
 
-        {/* Press Key */}
         {d.nodeType === 'press_key' && (
           <>
             <Field label="Key to Press">
@@ -796,11 +1149,360 @@ const ConfigPanel = ({
                 <option value="DOWN">DOWN ↓</option>
               </select>
             </Field>
-            <Field label="Target Selector (Optional)" hint="Leave blank to press on active element">
-              <input type="text" placeholder="e.g. #search-input (optional)" value={cfg.selector || ''}
+            <Field label="Target Selector (optional)">
+              <input type="text" placeholder="#search-input (optional)" value={cfg.selector || ''}
                 onChange={e => updateCfg('selector', e.target.value)} className="cp-input font-mono text-[11px]" />
             </Field>
           </>
+        )}
+
+        {/* ═══════════════════════════════════════════
+            ★ NEW: SAVE TO VARIABLE
+        ═══════════════════════════════════════════ */}
+        {d.nodeType === 'save_variable' && (
+          <div className="space-y-3">
+            <div className="bg-indigo-500/5 border border-indigo-500/15 rounded-lg p-3 space-y-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                <Variable size={11} /> Runtime Variable Config
+              </p>
+
+              <Field label="Variable Name" hint="Use this as {{variable_name}} in later blocks">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground text-[11px]">{'{{{'}</span>
+                  <input type="text" placeholder="tp_insurer" value={cfg.variableName || ''}
+                    onChange={e => updateCfg('variableName', e.target.value.replace(/[^a-z0-9_]/gi, '_').toLowerCase())}
+                    className="cp-input flex-1" />
+                  <span className="text-muted-foreground text-[11px]">{'}}}'}</span>
+                </div>
+              </Field>
+
+              <Field label="Read From">
+                <select className="cp-select" value={cfg.variableSource || 'element_value'}
+                  onChange={e => updateCfg('variableSource', e.target.value as never)}>
+                  <option value="element_value">Element .value attribute (input fields)</option>
+                  <option value="element_text">Element inner text (labels, spans)</option>
+                  <option value="element_attr">Element custom attribute</option>
+                  <option value="url">Current page URL</option>
+                  <option value="page_title">Page title</option>
+                </select>
+              </Field>
+
+              {cfg.variableSource !== 'url' && cfg.variableSource !== 'page_title' && (
+                <Field label="Source Selector" hint="CSS selector or XPath of the element to read">
+                  <input type="text" placeholder="e.g. #previnstp" value={cfg.selector || ''}
+                    onChange={e => updateCfg('selector', e.target.value)} className="cp-input font-mono text-[11px]" />
+                </Field>
+              )}
+
+              {cfg.variableSource === 'element_attr' && (
+                <Field label="Attribute Name" hint="e.g. data-value, aria-label, href">
+                  <input type="text" placeholder="data-value" value={cfg.variableAttr || ''}
+                    onChange={e => updateCfg('variableAttr', e.target.value)} className="cp-input font-mono text-[11px]" />
+                </Field>
+              )}
+
+              {cfg.variableName && (
+                <div className="bg-indigo-500/8 rounded-md p-2 text-[10px] text-indigo-700 dark:text-indigo-300">
+                  After this step, use <code className="font-mono bg-indigo-500/10 px-1 rounded">{'{{' + cfg.variableName + '}}'}</code> in any Type Text or If/Else block.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════
+            ★ NEW: CALCULATE / MODIFY DATA
+        ═══════════════════════════════════════════ */}
+        {d.nodeType === 'calculate' && (
+          <div className="space-y-3">
+            <div className="bg-teal-500/5 border border-teal-500/15 rounded-lg p-3 space-y-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400 flex items-center gap-1.5">
+                <Calculator size={11} /> Calculation Config
+              </p>
+
+              <Field label="Operation">
+                <select className="cp-select" value={cfg.calcOperation || 'date_subtract'}
+                  onChange={e => updateCfg('calcOperation', e.target.value as never)}>
+                  <optgroup label="Date Math">
+                    <option value="date_subtract">Date − N (subtract period)</option>
+                    <option value="date_add">Date + N (add period)</option>
+                  </optgroup>
+                  <optgroup label="Number Math">
+                    <option value="number_add">Number + N</option>
+                    <option value="number_subtract">Number − N</option>
+                  </optgroup>
+                  <optgroup label="Text Operations">
+                    <option value="text_split">Text → first N words</option>
+                    <option value="text_join">Join with separator</option>
+                    <option value="text_replace">Find & Replace</option>
+                  </optgroup>
+                </select>
+              </Field>
+
+              <Field label="Input Value / Variable" hint="Use {{variable_name}} or a raw value">
+                {availableColumns.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-1.5">
+                    {availableColumns.map(col => (
+                      <button key={col} onClick={() => insertColumn(col)}
+                        className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-500/10 text-purple-600 hover:bg-purple-500/20 transition-colors border border-purple-500/20">
+                        {`{{${col}}}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <input type="text" placeholder="{{tp_end_date}} or {{IDV_Min}}"
+                  value={cfg.calcInput || ''} onChange={e => updateCfg('calcInput', e.target.value)}
+                  className="cp-input font-mono text-[11px]" />
+              </Field>
+
+              {['date_subtract', 'date_add', 'number_add', 'number_subtract'].includes(cfg.calcOperation || 'date_subtract') && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Operand (amount)">
+                    <input type="number" min={0} value={cfg.calcOperand || '5'}
+                      onChange={e => updateCfg('calcOperand', e.target.value)} className="cp-input" />
+                  </Field>
+                  {['date_subtract', 'date_add'].includes(cfg.calcOperation || '') && (
+                    <Field label="Unit">
+                      <select className="cp-select" value={cfg.calcUnit || 'years'} onChange={e => updateCfg('calcUnit', e.target.value as never)}>
+                        <option value="years">Years</option>
+                        <option value="months">Months</option>
+                        <option value="days">Days</option>
+                      </select>
+                    </Field>
+                  )}
+                </div>
+              )}
+
+              {cfg.calcOperation === 'text_split' && (
+                <Field label="Take first N words">
+                  <input type="number" min={1} value={cfg.calcSplitIndex ?? 2}
+                    onChange={e => updateCfg('calcSplitIndex', Number(e.target.value))} className="cp-input" />
+                </Field>
+              )}
+
+              <Field label="Save result to Variable" hint="Access result as {{variable_name}} in later steps">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground text-[11px]">{'{{{'}</span>
+                  <input type="text" placeholder="calculated_date" value={cfg.calcOutputVar || ''}
+                    onChange={e => updateCfg('calcOutputVar', e.target.value.replace(/[^a-z0-9_]/gi, '_').toLowerCase())}
+                    className="cp-input flex-1" />
+                  <span className="text-muted-foreground text-[11px]">{'}}}'}</span>
+                </div>
+              </Field>
+
+              {cfg.calcInput && cfg.calcOutputVar && (
+                <div className="bg-teal-500/8 rounded-md p-2 text-[10px] text-teal-700 dark:text-teal-300 font-mono">
+                  {`{{${cfg.calcOutputVar}}} = ${cfg.calcInput} ${
+                    cfg.calcOperation === 'date_subtract' ? `− ${cfg.calcOperand || '?'} ${cfg.calcUnit}` :
+                    cfg.calcOperation === 'date_add' ? `+ ${cfg.calcOperand || '?'} ${cfg.calcUnit}` :
+                    cfg.calcOperation === 'number_add' ? `+ ${cfg.calcOperand || '?'}` :
+                    cfg.calcOperation === 'number_subtract' ? `− ${cfg.calcOperand || '?'}` :
+                    cfg.calcOperation === 'text_split' ? `[first ${cfg.calcSplitIndex ?? 2} words]` : ''
+                  }`}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════
+            ★ NEW: TRY-CATCH FALLBACK
+        ═══════════════════════════════════════════ */}
+        {d.nodeType === 'try_catch' && (
+          <div className="space-y-3">
+            <div className="bg-amber-500/5 border border-amber-500/15 rounded-lg p-3 space-y-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                <Shield size={11} /> Try-Catch Logic
+              </p>
+              <div className="bg-amber-500/8 rounded-md p-2 text-[10px] text-amber-700 dark:text-amber-300 leading-relaxed">
+                <b>How it works:</b> The Python runner executes <b>TRY steps</b> first.
+                If the CATCH condition appears (popup, error), it runs <b>FALLBACK steps</b> instead of crashing.
+              </div>
+
+              <Field label="Catch Trigger Condition" hint="What element/error triggers the fallback?">
+                <select className="cp-select" value={cfg.catchConditionType || 'element_appears'}
+                  onChange={e => updateCfg('catchConditionType', e.target.value as never)}>
+                  <option value="element_appears">Element appears on page</option>
+                  <option value="element_text_contains">Element text contains value</option>
+                  <option value="exception">Any Python exception</option>
+                </select>
+              </Field>
+
+              <Field label="Catch Selector / Text" hint="e.g. .swal2-html-container or 'Unable to fetch'">
+                <input type="text" placeholder=".swal2-html-container"
+                  value={cfg.catchCondition || ''} onChange={e => updateCfg('catchCondition', e.target.value)}
+                  className="cp-input font-mono text-[11px]" />
+              </Field>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="TRY Step Numbers" hint="Comma-separated step #s">
+                  <input type="text" placeholder="e.g. 5,6,7" value={(cfg.tryStepIds || []).join(',')}
+                    onChange={e => updateCfg('tryStepIds', e.target.value.split(',').map(v => v.trim()).filter(Boolean))}
+                    className="cp-input font-mono text-[11px]" />
+                </Field>
+                <Field label="FALLBACK Step Numbers" hint="Comma-separated step #s">
+                  <input type="text" placeholder="e.g. 8,9,10" value={(cfg.fallbackStepIds || []).join(',')}
+                    onChange={e => updateCfg('fallbackStepIds', e.target.value.split(',').map(v => v.trim()).filter(Boolean))}
+                    className="cp-input font-mono text-[11px]" />
+                </Field>
+              </div>
+
+              {cfg.retries && Number(cfg.retries) > 0 && (
+                <div className="bg-amber-500/8 rounded-md p-2 text-[10px] text-amber-700 dark:text-amber-300">
+                  ↺ Will retry TRY block up to <b>{cfg.retries}×</b> before giving up.
+                </div>
+              )}
+            </div>
+
+            <div className="text-[10px] text-muted-foreground bg-muted/40 rounded-lg p-2.5 leading-relaxed border border-border/50">
+              <b>Real example:</b> Fetch Vehicle Details (TRY: step 5) →<br/>
+              IF .swal2-html-container appears (CATCH) →<br/>
+              Click OK + Retry (FALLBACK: steps 6,7) → Skip record after 2 fails.
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════
+            ★ NEW: HUMAN IN THE LOOP
+        ═══════════════════════════════════════════ */}
+        {d.nodeType === 'human_in_loop' && (
+          <div className="space-y-3">
+            <div className="bg-rose-500/5 border border-rose-500/15 rounded-lg p-3 space-y-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                <UserCheck size={11} /> Human Pause Config
+              </p>
+              <div className="bg-rose-500/8 rounded-md p-2 text-[10px] text-rose-700 dark:text-rose-300 leading-relaxed">
+                When reached, the Python runner shows a <b>blocking Windows popup</b> and waits.
+                The browser stays open. Click <b>OK/Resume</b> to continue automation.
+              </div>
+
+              <Field label="Message to Show User">
+                <textarea value={cfg.hitlMessage || ''}
+                  onChange={e => updateCfg('hitlMessage', e.target.value)}
+                  placeholder="Please log in manually and click OK to resume."
+                  className="cp-textarea min-h-[70px]" />
+              </Field>
+
+              <Field label="When to Trigger">
+                <select className="cp-select" value={cfg.hitlTrigger || 'always'}
+                  onChange={e => updateCfg('hitlTrigger', e.target.value as never)}>
+                  <option value="always">Always pause at this step</option>
+                  <option value="if_element">Only if element is visible</option>
+                  <option value="if_variable_empty">Only if variable is empty</option>
+                </select>
+              </Field>
+
+              {cfg.hitlTrigger === 'if_element' && (
+                <Field label="Trigger Selector" hint="Pause only if this element is present">
+                  <input type="text" placeholder="//button[contains(@class,'cstmbtn')]"
+                    value={cfg.hitlTriggerSelector || ''} onChange={e => updateCfg('hitlTriggerSelector', e.target.value)}
+                    className="cp-input font-mono text-[11px]" />
+                </Field>
+              )}
+
+              {cfg.hitlTrigger === 'if_variable_empty' && (
+                <Field label="Trigger Variable" hint="Pause only if {{variable}} is empty">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground text-[11px]">{'{{{'}</span>
+                    <input type="text" placeholder="variable_name"
+                      value={cfg.hitlTriggerVariable || ''} onChange={e => updateCfg('hitlTriggerVariable', e.target.value)}
+                      className="cp-input flex-1" />
+                    <span className="text-muted-foreground text-[11px]">{'}}}'}</span>
+                  </div>
+                </Field>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════
+            ★ NEW: PIN FALLBACK
+        ═══════════════════════════════════════════ */}
+        {d.nodeType === 'pin_fallback' && (
+          <div className="space-y-3">
+            <div className="bg-cyan-500/5 border border-cyan-500/15 rounded-lg p-3 space-y-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 flex items-center gap-1.5">
+                <Shuffle size={11} /> PIN / City Fallback Logic
+              </p>
+              <div className="bg-cyan-500/8 rounded-md p-2 text-[10px] text-cyan-700 dark:text-cyan-300 leading-relaxed">
+                Tries <b>Primary PIN</b> first. If an error popup appears with the trigger text,
+                dismisses it and tries <b>Secondary PIN</b>. Validates 6-digit format automatically.
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Primary PIN Column">
+                  <div className="relative">
+                    <select className="cp-select" value={cfg.pinPrimaryColumn || ''}
+                      onChange={e => updateCfg('pinPrimaryColumn', e.target.value)}>
+                      <option value="">Select column…</option>
+                      {availableColumns.map(c => <option key={c} value={c}>{c}</option>)}
+                      {!availableColumns.length && <option value="PIN">PIN</option>}
+                    </select>
+                  </div>
+                </Field>
+                <Field label="Fallback PIN Column">
+                  <select className="cp-select" value={cfg.pinSecondaryColumn || ''}
+                    onChange={e => updateCfg('pinSecondaryColumn', e.target.value)}>
+                    <option value="">(none)</option>
+                    {availableColumns.map(c => <option key={c} value={c}>{c}</option>)}
+                    {!availableColumns.length && <option value="PIN 2">PIN 2</option>}
+                  </select>
+                </Field>
+              </div>
+
+              <Field label="Pincode Field Selector">
+                <input type="text" placeholder="#pincode" value={cfg.pinTargetSelector || '#pincode'}
+                  onChange={e => updateCfg('pinTargetSelector', e.target.value)} className="cp-input font-mono text-[11px]" />
+              </Field>
+
+              <Field label="Submit Button Selector">
+                <input type="text" placeholder="#buypol" value={cfg.pinSubmitSelector || '#buypol'}
+                  onChange={e => updateCfg('pinSubmitSelector', e.target.value)} className="cp-input font-mono text-[11px]" />
+              </Field>
+
+              <Field label="Error Popup Selector">
+                <input type="text" placeholder=".swal2-html-container" value={cfg.pinErrorSelector || '.swal2-html-container'}
+                  onChange={e => updateCfg('pinErrorSelector', e.target.value)} className="cp-input font-mono text-[11px]" />
+              </Field>
+
+              <Field label="Error Text to Match (triggers fallback)" hint="Case-insensitive partial match">
+                <input type="text" placeholder="enter customer city"
+                  value={cfg.pinErrorTextMatch || 'enter customer city'}
+                  onChange={e => updateCfg('pinErrorTextMatch', e.target.value)} className="cp-input text-[11px]" />
+              </Field>
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════
+            ★ NEW: LOGOUT DETECTION
+        ═══════════════════════════════════════════ */}
+        {d.nodeType === 'logout_detect' && (
+          <div className="space-y-3">
+            <div className="bg-rose-500/5 border border-rose-500/15 rounded-lg p-3 space-y-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                <AlertTriangle size={11} /> Logout Detection Config
+              </p>
+              <div className="bg-rose-500/8 rounded-md p-2 text-[10px] text-rose-700 dark:text-rose-300 leading-relaxed">
+                Automatically checked after every error. If the Login button is visible,
+                shows a popup and <b>retries the current record</b> after user logs back in.
+              </div>
+
+              <Field label="Login Button Selector" hint="XPath or CSS that identifies the LOGIN button">
+                <input type="text"
+                  placeholder="//button[contains(@class,'cstmbtn') and contains(.,'LOGIN')]"
+                  value={cfg.logoutDetectSelector || "//button[contains(@class,'cstmbtn') and contains(.,'LOGIN')]"}
+                  onChange={e => updateCfg('logoutDetectSelector', e.target.value)}
+                  className="cp-input font-mono text-[10px]" />
+              </Field>
+
+              <Field label="Message to User">
+                <textarea value={cfg.logoutMessage || 'You have been logged out. Please log in manually and click OK.'}
+                  onChange={e => updateCfg('logoutMessage', e.target.value)}
+                  className="cp-textarea min-h-[60px]" />
+              </Field>
+            </div>
+          </div>
         )}
 
         {/* Notes */}
@@ -829,21 +1531,21 @@ const Field = ({ label, hint, children }: { label: React.ReactNode; hint?: strin
 
 const TECH_OPTIONS: Record<string, Array<{ value: string; icon: string; name: string; desc: string }>> = {
   type_text: [
-    { value: 'send_keys',      icon: '⌨', name: 'send_keys()',  desc: 'Standard Selenium'  },
-    { value: 'dispatch_event', icon: '⚡', name: 'dispatchEvent', desc: 'Angular / React'   },
-    { value: 'native_setter',  icon: '🔒', name: 'Native Setter', desc: 'Bypass trackers'   },
+    { value: 'send_keys',      icon: '⌨', name: 'send_keys()',   desc: 'Standard Selenium'   },
+    { value: 'dispatch_event', icon: '⚡', name: 'dispatchEvent', desc: 'Angular/React fields' },
+    { value: 'native_setter',  icon: '🔒', name: 'Native Setter', desc: 'Bypass trackers'      },
   ],
   click: [
-    { value: 'standard_click', icon: '🖱', name: 'Standard',   desc: 'Normal .click()'   },
-    { value: 'js_click',       icon: '⚡', name: 'JS Execute', desc: 'Bypass overlays'   },
+    { value: 'standard_click', icon: '🖱', name: 'Standard',    desc: 'Normal .click()'    },
+    { value: 'js_click',       icon: '⚡', name: 'JS Execute',  desc: 'Bypass overlays'    },
   ],
   select: [
-    { value: 'native_select',    icon: '▼', name: 'Native Select', desc: 'HTML <select>'  },
-    { value: 'mat_autocomplete', icon: '✦', name: 'Autocomplete',  desc: 'Material UI'    },
+    { value: 'native_select',    icon: '▼', name: 'Native Select', desc: 'HTML <select>'   },
+    { value: 'mat_autocomplete', icon: '✦', name: 'Autocomplete',  desc: 'Material UI'     },
   ],
   checkbox: [
-    { value: 'standard_click', icon: '🖱', name: 'Standard',   desc: 'Normal click'     },
-    { value: 'js_click',       icon: '⚡', name: 'JS Execute', desc: 'Hidden toggles'   },
+    { value: 'standard_click', icon: '🖱', name: 'Standard',    desc: 'Normal click'      },
+    { value: 'js_click',       icon: '⚡', name: 'JS Execute',  desc: 'Hidden toggles'    },
   ],
 };
 
@@ -959,10 +1661,27 @@ const FlowCanvas = ({
           technique: defaultTechnique,
           waitType: 'element', waitTimeout: 10,
           loopCount: 3,
-          // Checkbox defaults to safe idempotent mode
           checkAction: 'ensure_checked',
           stateSelector: '',
           waitAfterMs: 0,
+          fillStrategy: 'fill_if_zero_or_na',
+          scrollIntoView: false,
+          scrollBlock: 'center',
+          selectBy: 'value',
+          matWords: 2,
+          variableSource: 'element_value',
+          calcOperation: 'date_subtract',
+          calcUnit: 'years',
+          calcSplitIndex: 2,
+          catchConditionType: 'element_appears',
+          hitlTrigger: 'always',
+          pinTargetSelector: '#pincode',
+          pinSubmitSelector: '#buypol',
+          pinErrorSelector: '.swal2-html-container',
+          pinErrorTextMatch: 'enter customer city',
+          logoutDetectSelector: "//button[contains(@class,'cstmbtn') and contains(.,'LOGIN')]",
+          conditionType: 'element_exists',
+          conditionOperator: 'is_empty',
           action: rType === 'switch_iframe' ? 'enter' : rType === 'switch_tab' ? 'next' : undefined,
           value: rType === 'press_key' ? 'ENTER' : undefined,
         },
@@ -1048,10 +1767,10 @@ const FlowCanvas = ({
       {/* JSON Dialog */}
       {jsonDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-          <div className="bg-card border border-border shadow-2xl rounded-2xl w-[680px] max-h-[80vh] flex flex-col overflow-hidden">
+          <div className="bg-card border border-border shadow-2xl rounded-2xl w-[700px] max-h-[80vh] flex flex-col overflow-hidden">
             <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
               <Code size={16} className="text-muted-foreground" />
-              <h2 className="text-sm font-semibold flex-1">Workflow JSON — Python Runner Payload</h2>
+              <h2 className="text-sm font-semibold flex-1">Workflow JSON — Python Runner Payload (v3.0)</h2>
               <div className="flex items-center gap-2">
                 <button onClick={copyJson} className="text-xs px-3 py-1.5 border border-border rounded-lg hover:bg-muted transition-colors">Copy</button>
                 <button onClick={downloadJson} className="text-xs px-3 py-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-1.5"><Download size={11} /> Download</button>
@@ -1076,7 +1795,7 @@ const FlowCanvas = ({
             <div className="space-y-3 mb-5">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Workflow Name</label>
-                <input type="text" placeholder="e.g. ICICI Lombard Form Fill" value={wfName}
+                <input type="text" placeholder="e.g. ICICI Lombard OD Full Flow" value={wfName}
                   onChange={e => setWfName(e.target.value)} className="cp-input" autoFocus />
               </div>
               <div className="space-y-1.5">
@@ -1100,7 +1819,7 @@ const FlowCanvas = ({
 };
 
 // ─────────────────────────────────────────────
-// SIDEBAR
+// SIDEBAR — expanded with all new blocks
 // ─────────────────────────────────────────────
 interface ToolDef {
   icon: React.ComponentType<{ size: number; className?: string }>;
@@ -1111,28 +1830,36 @@ interface ToolDef {
 const TOOL_SECTIONS: Array<{ title: string; tools: ToolDef[] }> = [
   { title: 'Core', tools: [
     { icon: Play,            label: 'Start',            nodeType: 'trigger',       sub: 'Entry point',        iName: 'Play',             category: 'trigger'  },
-    { icon: Globe,           label: 'Open URL',         nodeType: 'open_url',      sub: 'Navigation',         iName: 'Globe',            category: 'action'   },
+    { icon: Globe,           label: 'Open URL',         nodeType: 'open_url',      sub: 'Navigate to page',   iName: 'Globe',            category: 'action'   },
   ]},
-  { title: 'Data', tools: [
+  { title: 'Data & Memory', tools: [
     { icon: FileSpreadsheet, label: 'Loop Excel / CSV', nodeType: 'loop_excel',    sub: 'Per-row iteration',  iName: 'FileSpreadsheet',  category: 'data'     },
     { icon: Download,        label: 'Extract & Save',   nodeType: 'extract',       sub: 'Scrape to file',     iName: 'Download',         category: 'data'     },
+    { icon: Database,        label: 'Save to Variable', nodeType: 'save_variable', sub: 'Read & store value', iName: 'Database',         category: 'memory',  badge: 'NEW', badgeColor: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' },
+    { icon: Calculator,      label: 'Calculate / Modify', nodeType: 'calculate',   sub: 'Date, number, text', iName: 'Calculator',       category: 'memory',  badge: 'NEW', badgeColor: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' },
   ]},
   { title: 'Interactions', tools: [
     { icon: Keyboard,        label: 'Type Text / Date', nodeType: 'type_text',     sub: 'Fill text field',    iName: 'Keyboard',         category: 'action'   },
-    { icon: MousePointerClick, label: 'Click Element',  nodeType: 'click',         sub: 'Button / link',      iName: 'MousePointerClick', category: 'action'  },
+    { icon: MousePointerClick, label: 'Click Element',  nodeType: 'click',         sub: 'Button / link / JS', iName: 'MousePointerClick', category: 'action'  },
     { icon: ListFilter,      label: 'Select Dropdown',  nodeType: 'select',        sub: 'Native or Material', iName: 'ListFilter',       category: 'action'   },
     { icon: CheckSquare,     label: 'Toggle Checkbox',  nodeType: 'checkbox',      sub: 'Smart state-aware',  iName: 'CheckSquare',      category: 'action'   },
   ]},
-  { title: 'Logic', tools: [
-    { icon: Timer,           label: 'Smart Wait',       nodeType: 'wait',          sub: 'Element or delay',   iName: 'Timer',    category: 'logic',    badge: 'NEW', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
-    { icon: GitBranch,       label: 'If / Else Branch', nodeType: 'if_else',       sub: 'Condition logic',    iName: 'GitBranch', category: 'logic',   badge: 'NEW', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
-    { icon: RefreshCw,       label: 'Loop N Times',     nodeType: 'loop',          sub: 'Repeat steps',       iName: 'RefreshCw', category: 'logic',   badge: 'NEW', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+  { title: 'Logic & Flow', tools: [
+    { icon: Timer,           label: 'Smart Wait',       nodeType: 'wait',          sub: 'Element or delay',   iName: 'Timer',            category: 'logic'   },
+    { icon: GitBranch,       label: 'If / Else Branch', nodeType: 'if_else',       sub: 'Data-driven logic',  iName: 'GitBranch',        category: 'logic',   badge: '↑', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+    { icon: RefreshCw,       label: 'Loop N Times',     nodeType: 'loop',          sub: 'Repeat steps',       iName: 'RefreshCw',        category: 'logic'   },
+    { icon: Shield,          label: 'Try-Catch',        nodeType: 'try_catch',     sub: 'Fallback on error',  iName: 'Shield',           category: 'logic',   badge: 'NEW', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+  ]},
+  { title: 'Safety & Human', tools: [
+    { icon: UserCheck,       label: 'Human-in-Loop',    nodeType: 'human_in_loop', sub: 'Pause & resume',     iName: 'UserCheck',        category: 'safety',  badge: 'NEW', badgeColor: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' },
+    { icon: Shuffle,         label: 'PIN Fallback',     nodeType: 'pin_fallback',  sub: 'Primary/backup PIN', iName: 'Shuffle',          category: 'safety',  badge: 'NEW', badgeColor: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' },
+    { icon: AlertTriangle,   label: 'Logout Detect',    nodeType: 'logout_detect', sub: 'Session recovery',   iName: 'AlertTriangle',    category: 'safety',  badge: 'NEW', badgeColor: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' },
   ]},
   { title: 'Advanced', tools: [
-    { icon: Code,            label: 'JS Injection',     nodeType: 'js_inject',     sub: 'Custom JavaScript',  iName: 'Code',    category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
-    { icon: Layers,          label: 'Iframe Switch',    nodeType: 'switch_iframe', sub: 'Enter/Exit Iframes', iName: 'Layers',  category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
-    { icon: Monitor,         label: 'Tab Manager',      nodeType: 'switch_tab',    sub: 'Switch/Close Tabs',  iName: 'Monitor', category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
-    { icon: Keyboard,        label: 'Press Key',        nodeType: 'press_key',     sub: 'ENTER, TAB, etc.',   iName: 'Keyboard', category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+    { icon: Code,            label: 'JS Injection',     nodeType: 'js_inject',     sub: 'Custom JavaScript',  iName: 'Code',             category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+    { icon: Layers,          label: 'Iframe Switch',    nodeType: 'switch_iframe', sub: 'Enter/Exit Iframes', iName: 'Layers',           category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+    { icon: Monitor,         label: 'Tab Manager',      nodeType: 'switch_tab',    sub: 'Switch/Close Tabs',  iName: 'Monitor',          category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+    { icon: Keyboard,        label: 'Press Key',        nodeType: 'press_key',     sub: 'ENTER, TAB, etc.',   iName: 'Keyboard',         category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
   ]},
 ];
 
@@ -1214,7 +1941,6 @@ export function WorkflowEditor() {
   const [workflowName, setWorkflowName]           = useState('');
   const [workflowDesc, setWorkflowDesc]           = useState('');
 
-  // 🔴 THE FIX: Next.js native hook for reading URL parameters dynamically (Bina refresh kiye chalega)
   const searchParams = useSearchParams();
   const workflowId = searchParams ? searchParams.get('id') : null;
 
@@ -1241,17 +1967,14 @@ export function WorkflowEditor() {
   const updateNodeData = (id: string, patch: Partial<AutomationNodeData>) => {
     setNodes(nds => {
       const newNodes = [...nds];
-      
-      // 🔴 MAGIC DUPLICATE PREVENTION LOGIC
-      // Agar user koi naya Step Number (sequence) dalta hai
+
+      // Duplicate step number prevention
       if (patch.sequence !== undefined && patch.sequence > 0) {
-        // Toh check karo ki kya kisi aur block ke paas pehle se ye number hai
         const conflictIdx = newNodes.findIndex(n => n.id !== id && (n.data as unknown as AutomationNodeData).sequence === patch.sequence);
         if (conflictIdx !== -1) {
-          // Agar hai, toh us purane block ka number 0 ('—') kar do
           newNodes[conflictIdx] = {
             ...newNodes[conflictIdx],
-            data: { ...newNodes[conflictIdx].data, sequence: 0 } as any
+            data: { ...newNodes[conflictIdx].data, sequence: 0 } as never,
           };
         }
       }
@@ -1282,7 +2005,7 @@ export function WorkflowEditor() {
         .cp-textarea:focus { border-color:hsl(var(--primary)); }
       `}</style>
 
-      <div className="w-full h-[720px] border border-border rounded-xl overflow-hidden bg-background flex shadow-xl relative">
+      <div className="w-full h-[740px] border border-border rounded-xl overflow-hidden bg-background flex shadow-xl relative">
         {isLoading && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm rounded-xl">
             <div className="flex flex-col items-center gap-3">
