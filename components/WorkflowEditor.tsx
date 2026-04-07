@@ -1988,34 +1988,61 @@ export function WorkflowEditor() {
 
   const updateNodeData = (id: string, patch: Partial<AutomationNodeData>) => {
     setNodes(nds => {
-      const newNodes = [...nds];
+      const targetNode = nds.find(n => n.id === id);
+      if (!targetNode) return nds;
 
-      // Duplicate step number prevention
-      if (patch.sequence !== undefined && patch.sequence > 0) {
-        const conflictIdx = newNodes.findIndex(n => n.id !== id && (n.data as unknown as AutomationNodeData).sequence === patch.sequence);
-        if (conflictIdx !== -1) {
-          newNodes[conflictIdx] = {
-            ...newNodes[conflictIdx],
-            data: { ...newNodes[conflictIdx].data, sequence: 0 } as never,
+      const currentData = targetNode.data as unknown as AutomationNodeData;
+      const oldSeq = currentData.sequence || 0;
+      const newSeq = patch.sequence !== undefined ? patch.sequence : oldSeq;
+
+      // 🔴 THE MAGIC: Auto Shift / Cascade Logic
+      return nds.map(node => {
+        const nodeData = node.data as unknown as AutomationNodeData;
+        let seq = nodeData.sequence || 0;
+
+        // 1. Agar ye wahi block hai jisko user update kar raha hai
+        if (node.id === id) {
+          return {
+            ...node,
+            data: {
+              ...currentData,
+              ...patch,
+              config: patch.config ? { ...currentData.config, ...patch.config } : currentData.config,
+            },
           };
         }
-      }
 
-      return newNodes.map(node => {
-        if (node.id !== id) return node;
-        const current = node.data as unknown as AutomationNodeData;
-        return {
-          ...node,
-          data: {
-            ...current,
-            ...patch,
-            config: patch.config ? { ...current.config, ...patch.config } : current.config,
-          },
-        };
+        // 2. Dusre blocks ki numbering automatically theek karo (Shift logic)
+        if (patch.sequence !== undefined && seq > 0) {
+          if (oldSeq === 0 && newSeq > 0) {
+            // NAYA INSERT: Agar kisi naye block ko number diya hai, toh uske aage walo ko +1 kar do
+            if (seq >= newSeq) seq++;
+          } 
+          else if (oldSeq > 0 && newSeq === 0) {
+            // REMOVE: Agar kisi ka number hataya hai (0 kiya), toh uske aage walo ko -1 kar do
+            if (seq > oldSeq) seq--;
+          } 
+          else if (oldSeq > 0 && newSeq > 0) {
+            // MOVE/SWAP: Agar block ko upar ya neeche khiskaya hai
+            if (newSeq < oldSeq && seq >= newSeq && seq < oldSeq) {
+              seq++; // Upar khiskaya, toh baaki sabko +1 neeche dhakelo
+            } else if (newSeq > oldSeq && seq > oldSeq && seq <= newSeq) {
+              seq--; // Neeche khiskaya, toh baaki sabko -1 upar kheencho
+            }
+          }
+        }
+
+        // Agar sequence change hua hai tabhi naya data return karo
+        if (seq !== nodeData.sequence) {
+          return { ...node, data: { ...nodeData, sequence: seq } };
+        }
+
+        return node; // Koi change nahi
       });
     });
   };
 
+    
   return (
     <>
       <style>{`
