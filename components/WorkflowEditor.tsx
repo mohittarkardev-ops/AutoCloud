@@ -214,6 +214,16 @@ const ICICI_PRESETS: Record<string, Array<{
     { label: 'Login / Session Expired',       value: 'Please log in manually then click Resume.' },
     { label: 'OTP / Captcha Required',        value: 'Please complete the OTP/Captcha then click Resume.' },
   ],
+  js_inject: [
+    {
+      label: 'Date Math & Inject (TP Start & SAOD End)',
+      value: `let tpEndStr = '{{tp_end_date}}';\nif(tpEndStr && tpEndStr.includes('/')) {\n  let parts = tpEndStr.split('/');\n  let d = parseInt(parts[0],10), m = parseInt(parts[1],10)-1, y = parseInt(parts[2],10);\n  let tpStart = new Date(y-5, m, d+1);\n  let saodEnd = new Date(y-4, m, d);\n  let fmt = (dt) => String(dt.getDate()).padStart(2,'0')+'/'+String((dt.getMonth()+1)).padStart(2,'0')+'/'+dt.getFullYear();\n  let elStart = document.getElementById('TPpolstartdate');\n  if(elStart){ elStart.value=fmt(tpStart); elStart.dispatchEvent(new Event('input',{bubbles:true})); }\n  let elSaod = document.getElementById('prevpolenddate');\n  if(elSaod){ elSaod.value=fmt(saodEnd); elSaod.dispatchEvent(new Event('input',{bubbles:true})); }\n}`
+    },
+    {
+      label: 'IDV Min/Max Boundary Check',
+      value: `let idvEl = document.getElementById('sirangeinput');\nif(idvEl) {\n  let minVal = parseInt(idvEl.min)||0, maxVal = parseInt(idvEl.max)||99999999;\n  let excelIdv = parseInt('{{IDV}}'.replace(/,/g,''))||0;\n  let finalIdv = excelIdv > 0 && excelIdv < minVal ? minVal + 1 : (excelIdv > maxVal ? maxVal - 1 : excelIdv);\n  if(finalIdv > 0) {\n    idvEl.value = finalIdv;\n    idvEl.dispatchEvent(new Event('input',{bubbles:true}));\n    idvEl.dispatchEvent(new Event('blur',{bubbles:true}));\n  }\n}`
+    }
+  ],
 };
 
 // ─────────────────────────────────────────────
@@ -626,15 +636,17 @@ const ConfigPanel = ({
   const applyPreset = (preset: Record<string, unknown>) => {
     if (preset.selector !== undefined) updateCfg('selector', preset.selector as string);
     if (preset.value    !== undefined) {
-      if (['save_variable', 'calculate'].includes(d.nodeType)) {
+      // 🔴 THE FIX: JS Injection ke liye preset.value ko jsCode me save karna hai
+      if (d.nodeType === 'js_inject') {
+        updateCfg('jsCode', preset.value as string);
+      } else if (['save_variable', 'calculate'].includes(d.nodeType)) {
         if (d.nodeType === 'save_variable') updateCfg('variableName', preset.value as string);
         if (d.nodeType === 'calculate')     updateCfg('calcInput',    preset.value as string);
       } else {
         updateCfg('value', preset.value as string);
       }
     }
-    if (preset.technique)    updateCfg('technique',    preset.technique as never);
-    if (preset.waitTarget)   updateCfg('waitTarget',   preset.waitTarget as string);
+    if (preset.waitTarget)               updateCfg('waitTarget', preset.waitTarget as string);
     if (preset.waitType)     updateCfg('waitType',     preset.waitType as never);
     if (preset.waitTimeout)  updateCfg('waitTimeout',  preset.waitTimeout as number);
     if (preset.fillStrategy) updateCfg('fillStrategy', preset.fillStrategy as never);
@@ -1048,16 +1060,17 @@ const ConfigPanel = ({
               )}
             </div>
 
+            {/* 🔴 UPGRADED: IF/ELSE Jump Logic */}
             <div className="grid grid-cols-2 gap-2">
-              <Field label="✅ True → Branch label">
-                <input type="text" placeholder="e.g. use_website_data"
+              <Field label="✅ If TRUE → Jump to Step">
+                <input type="number" min={1} placeholder="e.g. 5"
                   value={cfg.trueBranch || ''} onChange={e => updateCfg('trueBranch', e.target.value)}
-                  className="cp-input text-[11px]" />
+                  className="cp-input text-[11px] font-bold text-green-600" />
               </Field>
-              <Field label="❌ False → Branch label">
-                <input type="text" placeholder="e.g. use_excel_data"
+              <Field label="❌ If FALSE → Jump to Step">
+                <input type="number" min={1} placeholder="e.g. 8"
                   value={cfg.falseBranch || ''} onChange={e => updateCfg('falseBranch', e.target.value)}
-                  className="cp-input text-[11px]" />
+                  className="cp-input text-[11px] font-bold text-red-600" />
               </Field>
             </div>
           </div>
@@ -1066,11 +1079,20 @@ const ConfigPanel = ({
         {/* ═══════════════════════════════════════════
             LOOP N TIMES
         ═══════════════════════════════════════════ */}
+        {/* ═══════════════════════════════════════════
+            LOOP N TIMES
+        ═══════════════════════════════════════════ */}
         {d.nodeType === 'loop' && (
-          <Field label="Repeat Count">
-            <input type="number" min={1} max={999} value={cfg.loopCount ?? 3}
-              onChange={e => updateCfg('loopCount', Number(e.target.value))} className="cp-input" />
-          </Field>
+          <div className="space-y-3">
+            <Field label="Repeat Count (How many times?)">
+              <input type="number" min={1} max={999} value={cfg.loopCount ?? 3}
+                onChange={e => updateCfg('loopCount', Number(e.target.value))} className="cp-input" />
+            </Field>
+            <Field label="Steps to Repeat" hint="Comma-separated step numbers (e.g. 5,6,7)">
+              <input type="text" placeholder="5,6,7" value={cfg.action || ''}
+                onChange={e => updateCfg('action', e.target.value)} className="cp-input font-mono text-[11px]" />
+            </Field>
+          </div>
         )}
 
         {/* ═══════════════════════════════════════════
