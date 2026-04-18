@@ -841,8 +841,8 @@ const ConfigPanel = ({
                 value={cfg.value || ''} onChange={e => updateCfg('value', e.target.value)} className="cp-textarea" />
             </Field>
 
-            {/* Fill Strategy — only for type_text */}
-            {d.nodeType === 'type_text' && (
+            {/* Fill Strategy — for type_text AND select */}
+            {['type_text', 'select'].includes(d.nodeType) && (
               <Field label="Fill Strategy" hint="When to fill vs skip the field">
                 <div className="grid grid-cols-1 gap-1">
                   {([
