@@ -166,10 +166,10 @@ const ICICI_PRESETS: Record<string, Array<{
     { label: 'Proceed (KYC/Arya)',       selector: '#arya_proceed_btn',                                  technique: 'js_click'        },
   ],
   select: [
-    { label: 'NCB → 0%',            selector: "//select[.//option[text()='0%']]", value: '0',       technique: 'native_select'    },
-    { label: 'Zero Dep → Silver',   selector: '#zerodep',                          value: 'silver',  technique: 'native_select'    },
-    { label: 'TP Insurer Name',     selector: '#previnstp',                                          technique: 'mat_autocomplete' },
-    { label: 'SAOD Insurer Name',   selector: '#previns',                                            technique: 'mat_autocomplete' },
+    { label: 'NCB → 0%',             selector: "//select[.//option[contains(normalize-space(), '0%')]]", value: '0%',       technique: 'native_select', fillStrategy: 'force_fill' },
+    { label: 'Zero Dep → Silver',    selector: "//select[.//option[contains(normalize-space(), 'Silver')]]", value: 'Silver', technique: 'native_select', fillStrategy: 'force_fill' },
+    { label: 'TP Insurer Name',      selector: "input[formcontrolname='tpInsurerName']",                      technique: 'mat_autocomplete', fillStrategy: 'fill_if_empty' },
+    { label: 'SAOD Insurer Name',    selector: "input[formcontrolname='previousPolicyInsurerName']",          technique: 'mat_autocomplete', fillStrategy: 'fill_if_empty' },
   ],
   checkbox: [
     { label: 'Standalone OD Toggle',         selector: "label[for='switch']",                  technique: 'js_click' },
