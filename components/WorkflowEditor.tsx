@@ -949,32 +949,63 @@ const ConfigPanel = ({
         )}
 
         {/* ═══════════════════════════════════════════
-            LOOP EXCEL
+            SMART LOOP EXCEL (Port-Active Resume Logic)
         ═══════════════════════════════════════════ */}
         {d.nodeType === 'loop_excel' && (
-          <div className="bg-teal-500/5 border border-teal-500/15 rounded-lg p-3 space-y-2">
-            <div className="flex items-center gap-1.5 text-teal-700 dark:text-teal-400">
-              <ShieldCheck size={12} />
-              <p className="text-[10px] font-bold uppercase tracking-tight">Local Mapping Mode</p>
-            </div>
-            <p className="text-[10px] text-muted-foreground leading-relaxed">
-              Select your Excel file to extract column headers locally (not uploaded).
-            </p>
-            <div>
-              <input type="file" accept=".xlsx,.xls,.csv" onChange={handleLocalFileSelect} className="hidden" id="local-excel-mapper" />
-              <label htmlFor="local-excel-mapper"
-                className="flex items-center justify-center gap-2 w-full py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold rounded-md cursor-pointer transition-colors">
-                <FileSearch size={12} /> Select Sample File
-              </label>
-            </div>
-            {cfg.fileName && (
-              <div className="flex items-center justify-between bg-background rounded-md px-2 py-1.5 border border-teal-500/20">
-                <span className="text-[10px] font-mono text-teal-700 dark:text-teal-400 truncate max-w-[200px]">{cfg.fileName}</span>
-                <CheckCircle2 size={12} className="text-teal-500 flex-shrink-0" />
+          <div className="space-y-4">
+            <div className="bg-teal-500/5 border border-teal-500/15 rounded-lg p-3 space-y-3">
+              <div className="flex items-center gap-1.5 text-teal-700 dark:text-teal-400">
+                <Database size={12} />
+                <p className="text-[10px] font-bold uppercase tracking-tight">Port-Active Smart Tracker</p>
               </div>
-            )}
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                Filters rows by matching the Reference Column with this tool's Active Port. Skips 'Success' records from the results file.
+              </p>
+              
+              <div>
+                <input type="file" accept=".xlsx,.xls,.csv" onChange={handleLocalFileSelect} className="hidden" id="local-excel-mapper" />
+                <label htmlFor="local-excel-mapper"
+                  className="flex items-center justify-center gap-2 w-full py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold rounded-md cursor-pointer transition-colors">
+                  <FileSearch size={12} /> Select Original Excel File
+                </label>
+              </div>
+              
+              {cfg.fileName && (
+                <div className="bg-background rounded-md px-2 py-1.5 border border-teal-500/20 text-[10px] font-mono text-teal-700 truncate">
+                  {cfg.fileName}
+                </div>
+              )}
+            </div>
+
             {availableColumns.length > 0 && (
-              <p className="text-[10px] text-teal-600 dark:text-teal-400 font-bold text-center">{availableColumns.length} columns ready for mapping</p>
+              <div className="space-y-3 border-t border-border/50 pt-3">
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Reference Col (e.g. Port)" hint="Column containing port numbers">
+                    <select className="cp-select" value={cfg.variableName || ''} onChange={e => updateCfg('variableName', e.target.value)}>
+                      <option value="">Select Column...</option>
+                      {availableColumns.map(col => <option key={col} value={col}>{col}</option>)}
+                    </select>
+                  </Field>
+                  
+                  <Field label="Active Port for this Tool" hint="e.g. 5001 or {{PORT_VAR}}">
+                    <input type="text" value={cfg.value || ''} placeholder="5001"
+                      onChange={e => updateCfg('value', e.target.value)} className="cp-input font-bold text-blue-600" />
+                  </Field>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Status Column Name">
+                    <input type="text" value={cfg.extractFields || 'Status'} 
+                      onChange={e => updateCfg('extractFields', e.target.value)} className="cp-input" />
+                  </Field>
+                  <Field label="Attempt Count Col">
+                    <input type="text" value={cfg.variableAttr || 'Attempt_Count'} 
+                      onChange={e => updateCfg('variableAttr', e.target.value)} className="cp-input" />
+                  </Field>
+                </div>
+                
+              </div>
             )}
           </div>
         )}
