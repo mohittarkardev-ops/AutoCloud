@@ -949,52 +949,45 @@ const ConfigPanel = ({
         )}
 
         {/* ═══════════════════════════════════════════
-            SMART LOOP EXCEL (Port-Active Resume Logic)
+            SMART LOOP EXCEL (Auto-Port Detection)
         ═══════════════════════════════════════════ */}
         {d.nodeType === 'loop_excel' && (
           <div className="space-y-4">
             <div className="bg-teal-500/5 border border-teal-500/15 rounded-lg p-3 space-y-3">
               <div className="flex items-center gap-1.5 text-teal-700 dark:text-teal-400">
                 <Database size={12} />
-                <p className="text-[10px] font-bold uppercase tracking-tight">Port-Active Smart Tracker</p>
+                <p className="text-[10px] font-bold uppercase tracking-tight">Smart Auto-Routing Loop</p>
               </div>
               <p className="text-[10px] text-muted-foreground leading-relaxed">
-                Filters rows by matching the Reference Column with this tool's Active Port. Skips 'Success' records from the results file.
+                The Python Runner will automatically detect its own Port/PC Number and fetch only its assigned rows from the Reference Column.
               </p>
               
               <div>
                 <input type="file" accept=".xlsx,.xls,.csv" onChange={handleLocalFileSelect} className="hidden" id="local-excel-mapper" />
                 <label htmlFor="local-excel-mapper"
                   className="flex items-center justify-center gap-2 w-full py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold rounded-md cursor-pointer transition-colors">
-                  <FileSearch size={12} /> Select Original Excel File
+                  <FileSearch size={12} /> Select Master Excel File
                 </label>
               </div>
-              
-              {cfg.fileName && (
-                <div className="bg-background rounded-md px-2 py-1.5 border border-teal-500/20 text-[10px] font-mono text-teal-700 truncate">
-                  {cfg.fileName}
-                </div>
-              )}
             </div>
 
             {availableColumns.length > 0 && (
               <div className="space-y-3 border-t border-border/50 pt-3">
                 
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Reference Col (e.g. Port)" hint="Column containing port numbers">
-                    <select className="cp-select" value={cfg.variableName || ''} onChange={e => updateCfg('variableName', e.target.value)}>
-                      <option value="">Select Column...</option>
-                      {availableColumns.map(col => <option key={col} value={col}>{col}</option>)}
-                    </select>
-                  </Field>
-                  
-                  <Field label="Active Port for this Tool" hint="e.g. 5001 or {{PORT_VAR}}">
-                    <input type="text" value={cfg.value || ''} placeholder="5001"
-                      onChange={e => updateCfg('value', e.target.value)} className="cp-input font-bold text-blue-600" />
-                  </Field>
+                {/* सिर्फ कॉलम का नाम पूछेंगे, पोर्ट का नंबर नहीं! */}
+                <Field label="Reference Column (Mapping ID)" hint="Select the column containing the PC/Port assignments (e.g. 'PC' or 'Assigned_Port')">
+                  <select className="cp-select" value={cfg.variableName || ''} onChange={e => updateCfg('variableName', e.target.value)}>
+                    <option value="">Select Column...</option>
+                    {availableColumns.map(col => <option key={col} value={col}>{col}</option>)}
+                  </select>
+                </Field>
+
+                {/* Visual indicator for the user */}
+                <div className="flex items-center justify-center p-2 bg-blue-50/50 border border-blue-100 rounded text-[10px] text-blue-600 font-medium">
+                   ⚡ Port Number will be auto-injected at runtime
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2 mt-2">
                   <Field label="Status Column Name">
                     <input type="text" value={cfg.extractFields || 'Status'} 
                       onChange={e => updateCfg('extractFields', e.target.value)} className="cp-input" />
