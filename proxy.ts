@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   // Check if session cookie exists
   const session = request.cookies.get('admin_session')?.value
   const isLoginPage = request.nextUrl.pathname === '/login'

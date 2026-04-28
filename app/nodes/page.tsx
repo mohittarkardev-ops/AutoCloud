@@ -7,17 +7,26 @@ import { CreateGroupModal } from "@/components/CreateGroupModal" // 🔴 NAYA IM
 
 export const dynamic = 'force-dynamic';
 
-async function getDevices() {
+// 🔴 THE FIX: TypeScript को बताएँ कि डिवाइस डेटा का स्ट्रक्चर कैसा है
+interface DeviceNode {
+  _id: string;
+  lastSeen: string;
+  status: string;
+  [key: string]: any; // इसके अलावा जो भी डायनामिक डेटा हो, उसे पास होने दो
+}
+
+async function getDevices(): Promise<DeviceNode[]> {
   const client = await clientPromise;
   const db = client.db("automation_db");
   const devices = await db.collection("devices").find({}).sort({ lastSeen: -1 }).toArray();
   
   // Server se Client me bhejne ke liye data serialize karna padta hai
-  return devices.map(d => ({
+  return devices.map((d: any) => ({
     ...d,
     _id: d._id.toString(),
-    lastSeen: new Date(d.lastSeen).toISOString() 
-  }));
+    lastSeen: new Date(d.lastSeen).toISOString(),
+    status: d.status || 'pending' // 🔴 TypeScript के लिए status को explicitly मैप किया
+  })) as DeviceNode[];
 }
 
 export default async function NodesPage() {
