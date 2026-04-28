@@ -1,6 +1,6 @@
 // web-dashboard/app/builder/page.tsx
 import clientPromise from "@/lib/mongodb"
-import { Cpu, Zap } from "lucide-react"
+import { Cpu, Zap, Layers } from "lucide-react" // Added Layers icon for groups
 import { TaskBuilderClient } from "@/components/TaskBuilderClient"
 import { getWorkflows } from "@/app/actions/workflows" 
 import { Sidebar } from "@/components/Sidebar"
@@ -8,48 +8,68 @@ import { Card, CardContent } from "@/components/ui/card"
 
 export const dynamic = 'force-dynamic';
 
-// Approved PCs fetch function
+// 1. Fetch Approved PCs
 async function getApprovedNodes() {
   const client = await clientPromise;
   const db = client.db("automation_db");
   return await db.collection("devices").find({ status: "approved" }).toArray();
 }
 
+// 2. NEW: Fetch Device Groups
+async function getDeviceGroups() {
+  const client = await clientPromise;
+  const db = client.db("automation_db");
+  // Assumes you have a collection named "device_groups"
+  return await db.collection("device_groups").find({}).toArray();
+}
+
 export default async function BuilderPage() {
-  // 1. Approved PCs fetch karo
+  // Fetch Nodes
   const approvedNodes = await getApprovedNodes();
   const serializedNodes = approvedNodes.map(node => ({
     ...node,
     _id: node._id.toString()
   }));
 
-  // 2. Database se asli Workflows fetch karo
+  // Fetch Groups
+  const deviceGroups = await getDeviceGroups();
+  const serializedGroups = deviceGroups.map(group => ({
+    ...group,
+    _id: group._id.toString()
+  }));
+
+  // Fetch Workflows
   const dbWorkflows = await getWorkflows();
 
   return (
     <div className="flex min-h-screen bg-[#fafafa] dark:bg-background">
       
-      {/* Naya Client-Side Sidebar Component */}
       <Sidebar />
 
-      {/* Main Content */}
       <main className="flex-1 p-8 lg:p-12 max-w-7xl mx-auto w-full">
         
-        {/* Header (Updated to Executive Theme) */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-10">
           <div>
             <h2 className="text-4xl font-extrabold tracking-tight mb-2">Assign Tasks</h2>
-            <p className="text-muted-foreground font-medium">Deploy your saved workflows to authorized hardware nodes.</p>
+            <p className="text-muted-foreground font-medium">Deploy your saved workflows to authorized nodes or device groups.</p>
           </div>
           
-          {/* Quick Stats Badge in Header */}
-          <div className="flex items-center gap-3 bg-muted/40 p-1.5 rounded-2xl border border-border/50">
+          {/* Quick Stats Badge (Updated to include Groups) */}
+          <div className="flex items-center gap-3 bg-muted/40 p-1.5 rounded-2xl border border-border/50 hidden md:flex">
             <div className="px-4 py-2 flex items-center gap-4">
                <div className="flex items-center gap-1.5">
                  <Cpu size={15} className="text-muted-foreground"/>
-                 <span className="text-sm font-bold">{approvedNodes.length} Ready Nodes</span>
+                 <span className="text-sm font-bold">{approvedNodes.length} Nodes</span>
                </div>
                <div className="h-4 w-px bg-border"></div>
+               
+               {/* New Group Stat */}
+               <div className="flex items-center gap-1.5">
+                 <Layers size={15} className="text-blue-500"/>
+                 <span className="text-sm font-bold text-blue-500">{deviceGroups.length} Groups</span>
+               </div>
+               <div className="h-4 w-px bg-border"></div>
+
                <div className="flex items-center gap-1.5">
                  <Zap size={15} className="text-primary"/>
                  <span className="text-sm font-bold text-primary">{dbWorkflows.length} Workflows</span>
@@ -58,11 +78,14 @@ export default async function BuilderPage() {
           </div>
         </header>
 
-        {/* Task Builder Area Wrap */}
         <Card className="border-none shadow-sm bg-card/60 backdrop-blur-sm overflow-hidden">
            <CardContent className="p-6 md:p-8">
-              {/* Humara Client Component - Ab isme Nodes aur Workflows dono bhej rahe hain */}
-              <TaskBuilderClient approvedNodes={serializedNodes} dbWorkflows={dbWorkflows} />
+              {/* Passed deviceGroups as a new prop */}
+              <TaskBuilderClient 
+                approvedNodes={serializedNodes} 
+                dbWorkflows={dbWorkflows} 
+                deviceGroups={serializedGroups} 
+              />
            </CardContent>
         </Card>
 

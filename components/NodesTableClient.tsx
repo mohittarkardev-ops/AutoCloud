@@ -1,4 +1,3 @@
-// web-dashboard/components/NodesTableClient.tsx
 'use client'
 
 import { useState } from "react"
@@ -15,16 +14,25 @@ import { NodeActionButtons } from "@/components/NodeActionButtons"
 import { NodeConfigDialog } from "@/components/NodeConfigDialog"
 import { DeleteNodeButton } from "@/components/DeleteNodeButton" 
 
-// Types for Sorting
-type SortKey = 'identity' | 'mac' | 'status' | 'ports' | 'assignment' | 'sync';
+// Types for Sorting (Added 'groups')
+type SortKey = 'identity' | 'mac' | 'status' | 'ports' | 'groups' | 'assignment' | 'sync';
 type SortDirection = 'asc' | 'desc';
 
-export function NodesTableClient({ initialDevices }: { initialDevices: any[] }) {
+// Added deviceGroups to props
+interface NodesTableClientProps {
+  initialDevices: any[];
+  deviceGroups?: any[]; 
+}
+
+export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTableClientProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("ALL")
-  
-  // 🔴 NEW: Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection } | null>(null);
+
+  // Helper to get groups for a specific device
+  const getDeviceGroupsList = (hardwareId: string) => {
+    return deviceGroups.filter(g => g.deviceIds?.includes(hardwareId));
+  };
 
   // 1. FILTERING LOGIC
   const filteredDevices = initialDevices.filter((device) => {
@@ -46,7 +54,6 @@ export function NodesTableClient({ initialDevices }: { initialDevices: any[] }) 
     let valA: any = '';
     let valB: any = '';
 
-    // Assigning values based on the selected column
     switch (key) {
       case 'identity':
         valA = (a.alias || a.hostname || '').toLowerCase();
@@ -63,6 +70,10 @@ export function NodesTableClient({ initialDevices }: { initialDevices: any[] }) 
       case 'ports':
         valA = a.maxInstances || 1;
         valB = b.maxInstances || 1;
+        break;
+      case 'groups':
+        valA = getDeviceGroupsList(a.hardwareId).map(g => g.name).join(', ').toLowerCase();
+        valB = getDeviceGroupsList(b.hardwareId).map(g => g.name).join(', ').toLowerCase();
         break;
       case 'assignment':
         valA = (a.assignedWorkflow?.name || '').toLowerCase();
@@ -88,7 +99,7 @@ export function NodesTableClient({ initialDevices }: { initialDevices: any[] }) 
     setSortConfig({ key, direction });
   };
 
-  // 🔴 UI HELPER: Sortable Header Component
+  // UI HELPER: Sortable Header Component
   const SortableHeader = ({ label, sortKey }: { label: string, sortKey: SortKey }) => {
     return (
       <TableHead 
@@ -143,24 +154,22 @@ export function NodesTableClient({ initialDevices }: { initialDevices: any[] }) 
           <Table>
             <TableHeader className="bg-muted/30 hover:bg-muted/30">
               <TableRow className="border-b border-border/50">
-                
-                {/* 🔴 NEW: Sortable Column Headers */}
                 <SortableHeader label="Identity" sortKey="identity" />
                 <SortableHeader label="MAC ID" sortKey="mac" />
                 <SortableHeader label="Status" sortKey="status" />
                 <SortableHeader label="Max Ports" sortKey="ports" />
+                {/* NEW GROUPS COLUMN HEADER */}
+                <SortableHeader label="Groups" sortKey="groups" />
                 <SortableHeader label="Assignment" sortKey="assignment" />
                 <SortableHeader label="Last Sync" sortKey="sync" />
-                
                 <TableHead className="text-right pr-6 font-bold text-xs uppercase tracking-widest text-muted-foreground">Access Mgt.</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               
-              {/* Note: Map is now running over 'sortedDevices' instead of 'filteredDevices' */}
               {sortedDevices.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-24 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-24 text-muted-foreground">
                     <div className="flex flex-col items-center gap-3">
                       <div className="p-4 bg-muted/30 rounded-full">
                         <MonitorSmartphone size={40} className="opacity-20" />
@@ -175,6 +184,9 @@ export function NodesTableClient({ initialDevices }: { initialDevices: any[] }) 
                   const lastSeenDate = new Date(device.lastSeen).getTime();
                   const now = new Date().getTime();
                   const isOnline = (now - lastSeenDate) < 90000; 
+                  
+                  // Extract groups for this specific device
+                  const deviceGroupsArray = getDeviceGroupsList(device.hardwareId);
 
                   return (
                     <TableRow key={device._id} className="hover:bg-muted/10 transition-colors border-b border-border/40">
@@ -219,7 +231,27 @@ export function NodesTableClient({ initialDevices }: { initialDevices: any[] }) 
                         </div>
                       </TableCell>
 
-                      {/* 5. Assigned Duty */}
+                      {/* 5. Groups Display (NEW) */}
+                      <TableCell>
+                        {deviceGroupsArray.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {deviceGroupsArray.slice(0, 2).map((g) => (
+                              <Badge key={g._id} variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100">
+                                {g.name}
+                              </Badge>
+                            ))}
+                            {deviceGroupsArray.length > 2 && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                +{deviceGroupsArray.length - 2}
+                              </Badge>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+
+                      {/* 6. Assigned Duty */}
                       <TableCell>
                         {device.assignedWorkflow ? (
                           <div className="flex flex-col max-w-[150px]">
@@ -232,7 +264,7 @@ export function NodesTableClient({ initialDevices }: { initialDevices: any[] }) 
                         )}
                       </TableCell>
 
-                      {/* 6. Last Seen */}
+                      {/* 7. Last Seen */}
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="text-[12px] font-bold">
@@ -242,7 +274,7 @@ export function NodesTableClient({ initialDevices }: { initialDevices: any[] }) 
                         </div>
                       </TableCell>
 
-                      {/* 7. Access Management Actions */}
+                      {/* 8. Access Management Actions */}
                       <TableCell className="text-right pr-6">
                         <div className="flex justify-end items-center gap-2">
                           {device.status === 'approved' && (
