@@ -10,13 +10,10 @@ async function getGroupsData() {
   const client = await clientPromise;
   const db = client.db("automation_db");
   
-  // 1. सारे ग्रुप्स फेच करें
   const groups = await db.collection("groups").find({}).sort({ createdAt: -1 }).toArray();
   
-  // 2. वो सारे डिवाइसेस फेच करें जो किसी न किसी ग्रुप में हैं
-  const assignedDevices = await db.collection("devices")
-    .find({ groupId: { $exists: true, $ne: "" } })
-    .toArray();
+  // 🔴 THE FIX: सारे Approved Devices लाएँ, ताकि नए PC भी जोड़े जा सकें
+  const allApprovedDevices = await db.collection("devices").find({ status: "approved" }).toArray();
 
   return {
     groups: groups.map(g => ({ 
@@ -24,7 +21,7 @@ async function getGroupsData() {
       _id: g._id.toString(), 
       createdAt: g.createdAt ? new Date(g.createdAt).toISOString() : new Date().toISOString() 
     })),
-    devices: assignedDevices.map(d => ({ 
+    devices: allApprovedDevices.map(d => ({ 
       ...d, 
       _id: d._id.toString() 
     }))

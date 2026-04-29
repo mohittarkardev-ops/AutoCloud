@@ -90,3 +90,33 @@ export async function deleteGroup(groupId: string) {
         return { success: false, error: "Failed to delete group." };
     }
 }
+// --- इसे app/actions/groups.ts के सबसे नीचे जोड़ दें ---
+
+export async function updateGroupDevices(groupId: string, groupName: string, selectedHardwareIds: string[]) {
+    try {
+        const client = await clientPromise;
+        const db = client.db("automation_db");
+
+        // 1. सबसे पहले इस ग्रुप से सारे डिवाइसेस को हटा दें (ताकि लिस्ट फ्रेश हो जाए)
+        await db.collection("devices").updateMany(
+            { groupId: groupId },
+            { $unset: { groupId: "", groupName: "" } }
+        );
+
+        // 2. अब जो नए डिवाइसेस सिलेक्ट किए गए हैं, उनमें यह ग्रुप ID डाल दें
+        if (selectedHardwareIds && selectedHardwareIds.length > 0) {
+            await db.collection("devices").updateMany(
+                { hardwareId: { $in: selectedHardwareIds } },
+                { $set: { groupId: groupId, groupName: groupName } }
+            );
+        }
+
+        revalidatePath('/groups');
+        revalidatePath('/nodes');
+        revalidatePath('/builder');
+        return { success: true };
+    } catch (error) {
+        console.error("Update Group Devices Error:", error);
+        return { success: false, error: "Failed to update devices for this group." };
+    }
+}

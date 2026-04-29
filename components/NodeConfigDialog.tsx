@@ -1,4 +1,3 @@
-// web-dashboard/components/NodeConfigDialog.tsx
 'use client'
 
 import { useState, useTransition } from "react"
@@ -18,7 +17,10 @@ interface NodeConfigProps {
 export function NodeConfigDialog({ hardwareId, currentAlias, currentMaxInstances }: NodeConfigProps) {
   const [open, setOpen] = useState(false);
   const [alias, setAlias] = useState(currentAlias || "");
-  const [instances, setInstances] = useState(currentMaxInstances || 1);
+  
+  // 🔴 THE FIX: Default value is now 5 instead of 1
+  const [instances, setInstances] = useState(currentMaxInstances || 5);
+  
   const [isPending, startTransition] = useTransition();
 
   const handleSave = () => {
@@ -57,7 +59,8 @@ export function NodeConfigDialog({ hardwareId, currentAlias, currentMaxInstances
               min={1}
               max={10}
               value={instances} 
-              onChange={(e) => setInstances(parseInt(e.target.value) || 1)} 
+              // 🔴 THE FIX: Fallback value updated to 5 if input is cleared
+              onChange={(e) => setInstances(parseInt(e.target.value) || 5)} 
             />
             <p className="text-xs text-muted-foreground">How many automation threads can run simultaneously on this PC.</p>
           </div>
