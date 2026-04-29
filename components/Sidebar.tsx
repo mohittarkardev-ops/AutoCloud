@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation'
 import { Button } from "@/components/ui/button"
 import { 
   LayoutDashboard, MonitorSmartphone, PlayCircle, 
-  Settings, Network, ShieldCheck 
+  Settings, Network, ShieldCheck, Layers 
 } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils"
 const navItems = [
   { name: 'Overview', href: '/', icon: LayoutDashboard },
   { name: 'Nodes & Devices', href: '/nodes', icon: MonitorSmartphone },
+  { name: 'Device Groups', href: '/groups', icon: Layers }, // 🔴 NAYA: Groups Page Link
   { name: 'Assign Tasks', href: '/builder', icon: PlayCircle },
   { name: 'Workflows', href: '/workflows', icon: Network },
 ]
@@ -32,7 +33,9 @@ export function Sidebar() {
 
       <nav className="flex flex-col gap-1.5 flex-1">
         {navItems.map((item) => {
-          const isActive = pathname === item.href
+          // 🌟 SMART UPGRADE: Highlight parent tab even if you are on a sub-page (e.g., /nodes/123)
+          const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
+          
           return (
             <Link key={item.name} href={item.href}>
               <Button 
