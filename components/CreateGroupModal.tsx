@@ -15,6 +15,7 @@ export function CreateGroupModal({ approvedNodes }: { approvedNodes: any[] }) {
   const [description, setDescription] = useState("");
   const [selectedDevices, setSelectedDevices] = useState<string[]>([]);
   const [isPending, startTransition] = useTransition();
+  const [errorMsg, setErrorMsg] = useState(""); // 🔴 Error state added
 
   const toggleDevice = (hardwareId: string) => {
     setSelectedDevices(prev => 
@@ -26,15 +27,21 @@ export function CreateGroupModal({ approvedNodes }: { approvedNodes: any[] }) {
 
   const handleSave = () => {
     if (!groupName || selectedDevices.length === 0) return;
+    setErrorMsg("");
 
     startTransition(async () => {
-      await createDeviceGroup(groupName, description, selectedDevices);
+      const result = await createDeviceGroup(groupName, description, selectedDevices);
       
-      // Reset and close
-      setGroupName("");
-      setDescription("");
-      setSelectedDevices([]);
-      setOpen(false);
+      if (result.success) {
+        // Reset and close only on success
+        setGroupName("");
+        setDescription("");
+        setSelectedDevices([]);
+        setOpen(false);
+      } else {
+        // 🔴 Show error if backend fails
+        setErrorMsg(result.error || "Something went wrong!");
+      }
     });
   };
 
@@ -78,27 +85,36 @@ export function CreateGroupModal({ approvedNodes }: { approvedNodes: any[] }) {
             
             <div className="border rounded-md">
               <ScrollArea className="h-[200px]">
-                {approvedNodes.map(node => (
-                  <div 
-                    key={node.hardwareId} 
-                    className="flex items-center space-x-3 p-3 hover:bg-muted/50 cursor-pointer border-b last:border-0"
-                    onClick={() => toggleDevice(node.hardwareId)}
-                  >
-                    <Checkbox 
-                      checked={selectedDevices.includes(node.hardwareId)} 
-                      onCheckedChange={() => toggleDevice(node.hardwareId)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <div className="flex items-center gap-2">
-                      <MonitorSmartphone size={14} className="text-muted-foreground" />
-                      <span className="text-sm font-medium">{node.hostname}</span>
-                      <span className="text-xs text-muted-foreground font-mono">({node.hardwareId})</span>
-                    </div>
+                {approvedNodes.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">
+                    No approved devices available.
                   </div>
-                ))}
+                ) : (
+                  approvedNodes.map(node => (
+                    <div 
+                      key={node.hardwareId} 
+                      className="flex items-center space-x-3 p-3 hover:bg-muted/50 cursor-pointer border-b last:border-0"
+                      onClick={() => toggleDevice(node.hardwareId)}
+                    >
+                      <Checkbox 
+                        checked={selectedDevices.includes(node.hardwareId)} 
+                        onCheckedChange={() => toggleDevice(node.hardwareId)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <div className="flex items-center gap-2">
+                        <MonitorSmartphone size={14} className="text-muted-foreground" />
+                        <span className="text-sm font-medium">{node.hostname || "Unknown Host"}</span>
+                        <span className="text-xs text-muted-foreground font-mono">({node.hardwareId})</span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </ScrollArea>
             </div>
           </div>
+          
+          {/* 🔴 Error Message Display */}
+          {errorMsg && <p className="text-sm text-red-500 font-medium">{errorMsg}</p>}
         </div>
 
         <DialogFooter>
