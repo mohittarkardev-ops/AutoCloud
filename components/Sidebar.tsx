@@ -62,11 +62,20 @@ export function Sidebar() {
           <p className="text-sm font-semibold truncate">Admin Panel</p>
           <p className="text-xs text-muted-foreground">v2.1.0-stable</p>
         </div>
-        <Button variant="ghost" className="w-full justify-start gap-3 text-muted-foreground">
-          <Settings size={18} />
-          Settings
-        </Button>
-      </div>
-    </aside>
-  )
+        {/* 🔴 NAYA: Settings Button with Link & Active State */}
+          <Link href="/settings" className="block w-full">
+            <Button 
+              variant={pathname.startsWith('/settings') ? "secondary" : "ghost"} 
+              className={cn(
+                "w-full justify-start gap-3 transition-all",
+                pathname.startsWith('/settings') ? "font-bold shadow-sm text-primary" : "text-muted-foreground hover:translate-x-1"
+              )}
+            >
+              <Settings size={18} />
+              Settings
+            </Button>
+          </Link>
+        </div>
+      </aside>
+    )
 }
