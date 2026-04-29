@@ -11,11 +11,10 @@ import { assignTaskToNodes } from "@/app/actions/tasks"
 import { Search, MonitorSmartphone, Send, CheckCircle2, Network, ExternalLink, Layers, Users } from "lucide-react"
 import Link from "next/link"
 
-// Updated Interface to accept deviceGroups
 interface TaskBuilderClientProps {
   approvedNodes: any[];
   dbWorkflows: any[];
-  deviceGroups?: any[]; // Made optional in case you haven't seeded DB yet
+  deviceGroups?: any[]; 
 }
 
 export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [] }: TaskBuilderClientProps) {
@@ -74,6 +73,16 @@ export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [
     }
   };
 
+  // 🔴 FIX: Helper to accurately calculate total devices inside selected groups
+  const getTotalDevicesFromGroups = () => {
+    const idsSet = new Set<string>();
+    selectedGroups.forEach(groupId => {
+      // Find all approved nodes that belong to this group
+      approvedNodes.filter(n => n.groupId === groupId).forEach(n => idsSet.add(n.hardwareId));
+    });
+    return idsSet.size;
+  };
+
   // --- DEPLOYMENT LOGIC ---
   const handleDeploy = () => {
     if (!selectedTask) return;
@@ -87,19 +96,18 @@ export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [
     if (activeTab === 'nodes') {
       targetHardwareIds = selectedNodes;
     } else {
-      // Logic for Groups: Extract all deviceIds from selected groups and remove duplicates
+      // 🔴 FIX: Extract hardware IDs using our relational approach
       const idsSet = new Set<string>();
       selectedGroups.forEach(groupId => {
-        const group = deviceGroups.find(g => g._id === groupId);
-        if (group && Array.isArray(group.deviceIds)) {
-          group.deviceIds.forEach((id: string) => idsSet.add(id));
-        }
+        approvedNodes
+          .filter(node => node.groupId === groupId)
+          .forEach(node => idsSet.add(node.hardwareId));
       });
       targetHardwareIds = Array.from(idsSet);
     }
 
     if (targetHardwareIds.length === 0) {
-      alert("No valid devices found in the selected targets.");
+      alert("No valid/approved devices found in the selected targets.");
       return;
     }
 
@@ -115,18 +123,6 @@ export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [
     });
   };
 
-  // Helper to calculate total devices if groups are selected
-  const getTotalDevicesFromGroups = () => {
-    const idsSet = new Set<string>();
-    selectedGroups.forEach(groupId => {
-      const group = deviceGroups.find(g => g._id === groupId);
-      if (group && Array.isArray(group.deviceIds)) {
-        group.deviceIds.forEach((id: string) => idsSet.add(id));
-      }
-    });
-    return idsSet.size;
-  };
-
   return (
     <div className="grid lg:grid-cols-5 gap-8">
       
@@ -139,7 +135,6 @@ export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [
           </div>
           
           <div className="flex flex-col gap-3">
-            {/* Custom Segmented Control for Tabs */}
             <div className="flex p-1 bg-muted/50 border rounded-md">
               <button 
                 onClick={() => setActiveTab('nodes')}
@@ -223,28 +218,33 @@ export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [
                     <TableCell colSpan={4} className="text-center h-32 text-muted-foreground">No groups found. Create one in your database first.</TableCell>
                   </TableRow>
                 ) : (
-                  filteredGroups.map(group => (
-                    <TableRow key={group._id} className="cursor-pointer" onClick={() => toggleGroup(group._id)}>
-                      <TableCell className="pl-4">
-                        <Checkbox checked={selectedGroups.includes(group._id)} onCheckedChange={() => toggleGroup(group._id)} onClick={(e) => e.stopPropagation()} />
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Layers className="w-4 h-4 text-blue-500" />
-                          <p className="font-medium text-sm leading-none">{group.name}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1.5 text-xs font-medium">
-                          <Users size={14} className="text-muted-foreground"/>
-                          {group.deviceIds?.length || 0} PCs
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground truncate max-w-[150px]">
-                        {group.description || "No description"}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  filteredGroups.map(group => {
+                    // 🔴 FIX: Dynamically count devices in this group
+                    const groupDeviceCount = approvedNodes.filter(n => n.groupId === group._id).length;
+
+                    return (
+                      <TableRow key={group._id} className="cursor-pointer" onClick={() => toggleGroup(group._id)}>
+                        <TableCell className="pl-4">
+                          <Checkbox checked={selectedGroups.includes(group._id)} onCheckedChange={() => toggleGroup(group._id)} onClick={(e) => e.stopPropagation()} />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Layers className="w-4 h-4 text-blue-500" />
+                            <p className="font-medium text-sm leading-none">{group.name}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5 text-xs font-medium">
+                            <Users size={14} className="text-muted-foreground"/>
+                            {groupDeviceCount} PCs
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground truncate max-w-[150px]">
+                          {group.description || "No description"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )
               )}
             </TableBody>

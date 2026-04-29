@@ -15,12 +15,12 @@ async function getApprovedNodes() {
   return await db.collection("devices").find({ status: "approved" }).toArray();
 }
 
-// 2. NEW: Fetch Device Groups
+// 2. 🔴 FIXED: Fetch Device Groups (Correct Collection Name)
 async function getDeviceGroups() {
   const client = await clientPromise;
   const db = client.db("automation_db");
-  // Assumes you have a collection named "device_groups"
-  return await db.collection("device_groups").find({}).toArray();
+  // 🔴 "device_groups" की जगह "groups" कर दिया गया है
+  return await db.collection("groups").find({}).toArray();
 }
 
 export default async function BuilderPage() {
@@ -28,14 +28,16 @@ export default async function BuilderPage() {
   const approvedNodes = await getApprovedNodes();
   const serializedNodes = approvedNodes.map(node => ({
     ...node,
-    _id: node._id.toString()
+    _id: node._id.toString(),
+    lastSeen: node.lastSeen ? new Date(node.lastSeen).toISOString() : null, // 🔴 Safety for Date
   }));
 
   // Fetch Groups
   const deviceGroups = await getDeviceGroups();
   const serializedGroups = deviceGroups.map(group => ({
     ...group,
-    _id: group._id.toString()
+    _id: group._id.toString(),
+    createdAt: group.createdAt ? new Date(group.createdAt).toISOString() : new Date().toISOString() // 🔴 Safety for Date
   }));
 
   // Fetch Workflows

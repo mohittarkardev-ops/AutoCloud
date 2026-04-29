@@ -1,38 +1,49 @@
-// web-dashboard/app/nodes/page.tsx
 import clientPromise from "@/lib/mongodb"
 import { Cpu } from "lucide-react"
 import { Sidebar } from "@/components/Sidebar"
 import { NodesTableClient } from "@/components/NodesTableClient"
-import { CreateGroupModal } from "@/components/CreateGroupModal" // 🔴 NAYA IMPORT
+import { CreateGroupModal } from "@/components/CreateGroupModal"
 
 export const dynamic = 'force-dynamic';
 
-// 🔴 THE FIX: TypeScript को बताएँ कि डिवाइस डेटा का स्ट्रक्चर कैसा है
 interface DeviceNode {
   _id: string;
   lastSeen: string;
   status: string;
-  [key: string]: any; // इसके अलावा जो भी डायनामिक डेटा हो, उसे पास होने दो
+  [key: string]: any; 
 }
 
-async function getDevices(): Promise<DeviceNode[]> {
+// 🔴 THE FIX: अब हम Devices के साथ-साथ Groups भी फेच करेंगे
+async function getData() {
   const client = await clientPromise;
   const db = client.db("automation_db");
-  const devices = await db.collection("devices").find({}).sort({ lastSeen: -1 }).toArray();
   
-  // Server se Client me bhejne ke liye data serialize karna padta hai
-  return devices.map((d: any) => ({
+  // 1. Devices निकालें
+  const devices = await db.collection("devices").find({}).sort({ lastSeen: -1 }).toArray();
+  // 2. Groups निकालें
+  const groups = await db.collection("groups").find({}).toArray();
+  
+  const serializedDevices = devices.map((d: any) => ({
     ...d,
     _id: d._id.toString(),
     lastSeen: new Date(d.lastSeen).toISOString(),
-    status: d.status || 'pending' // 🔴 TypeScript के लिए status को explicitly मैप किया
+    status: d.status || 'pending' 
   })) as DeviceNode[];
+
+  // Groups की ObjectId को String में बदलें
+  const serializedGroups = groups.map((g: any) => ({
+    ...g,
+    _id: g._id.toString(),
+    createdAt: g.createdAt ? new Date(g.createdAt).toISOString() : new Date().toISOString()
+  }));
+
+  return { devices: serializedDevices, groups: serializedGroups };
 }
 
 export default async function NodesPage() {
-  const devices = await getDevices();
+  // 🔴 दोनों डेटा (devices और groups) को यहाँ रिसीव करें
+  const { devices, groups } = await getData();
   
-  // 🔴 NAYA: Sirf approved nodes ko filter karo group banane ke liye
   const approvedNodes = devices.filter(d => d.status === 'approved');
 
   return (
@@ -47,7 +58,6 @@ export default async function NodesPage() {
             <p className="text-muted-foreground font-medium">Remote control and real-time monitoring of connected machines.</p>
           </div>
           
-          {/* 🔴 NAYA: Flex container banaya taaki badge aur button saath mein aayein */}
           <div className="flex items-center gap-3">
             <div className="bg-muted/40 p-1.5 rounded-2xl border border-border/50">
               <div className="px-4 py-2 flex items-center gap-2">
@@ -56,13 +66,12 @@ export default async function NodesPage() {
               </div>
             </div>
 
-            {/* 🔴 NAYA: Create Group Modal Button yahan lagaya */}
             <CreateGroupModal approvedNodes={approvedNodes} />
           </div>
         </header>
 
-        {/* Client Component Call */}
-        <NodesTableClient initialDevices={devices} />
+        {/* 🔴 THE FIX: अब deviceGroups={groups} को टेबल में पास करें */}
+        <NodesTableClient initialDevices={devices} deviceGroups={groups} />
 
       </main>
     </div>
