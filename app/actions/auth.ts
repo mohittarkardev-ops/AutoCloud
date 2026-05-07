@@ -13,7 +13,8 @@ export async function login(password: string) {
     // 7 dino ke liye secure session cookie set kar rahe hain
     cookieStore.set('admin_session', 'authenticated', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      // 🔴 THE FIX: Temporarily set secure to false so it works on HTTP IP Address
+      secure: false, 
       maxAge: 60 * 60 * 24 * 7, // 1 week
       path: '/',
     });
