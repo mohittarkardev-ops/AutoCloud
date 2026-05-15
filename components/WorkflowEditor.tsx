@@ -1979,34 +1979,23 @@ const Sidebar = () => {
 // ─────────────────────────────────────────────
 // MAIN EXPORT
 // ─────────────────────────────────────────────
-export function WorkflowEditor() {
-  const [nodes, setNodes]                         = useState<Node[]>([]);
-  const [selectedNodeId, setSelectedNodeId]       = useState<string | null>(null);
-  const [availableColumns, setAvailableColumns]   = useState<string[]>([]);
-  const [isLoading, setIsLoading]                 = useState(false);
-  const [workflowName, setWorkflowName]           = useState('');
-  const [workflowDesc, setWorkflowDesc]           = useState('');
+// 🔴 THE FIX: TypeScript ko batao ki ye component kya receive karega
+interface WorkflowEditorProps {
+  initialData?: any;
+}
 
-  const searchParams = useSearchParams();
-  const workflowId = searchParams ? searchParams.get('id') : null;
+export function WorkflowEditor({ initialData }: WorkflowEditorProps) {
+  // 🔴 1. THE FIX: State ko direct server ke data se bharo (0ms Loading time!)
+  const [nodes, setNodes]                                 = useState<Node[]>(initialData?.nodes || []);
+  const [workflowName, setWorkflowName]                   = useState(initialData?.name || '');
+  const [workflowDesc, setWorkflowDesc]                   = useState(initialData?.description || '');
+  
+  const [selectedNodeId, setSelectedNodeId]               = useState<string | null>(null);
+  const [availableColumns, setAvailableColumns]           = useState<string[]>([]);
+  const [isLoading, setIsLoading]                         = useState(false); // Ab iski zaroorat nahi padegi
 
-  useEffect(() => {
-    if (!workflowId) return;
-    const load = async () => {
-      setIsLoading(true);
-      try {
-        const res  = await fetch(`/api/workflows/${workflowId}`);
-        const data = await res.json();
-        if (data.success && data.workflow) {
-          setNodes(data.workflow.nodes || []);
-          setWorkflowName(data.workflow.name || '');
-          setWorkflowDesc(data.workflow.description || '');
-        }
-      } catch (err) { console.error('Failed to load workflow:', err); }
-      finally { setIsLoading(false); }
-    };
-    load();
-  }, [workflowId]);
+  // 🔴 2. URL padhne ki zaroorat nahi, ID direct data se nikal lo
+  const workflowId = initialData?._id || null;
 
   const selectedNode = nodes.find(n => n.id === selectedNodeId) ?? null;
 

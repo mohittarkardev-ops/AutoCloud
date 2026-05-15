@@ -5,14 +5,19 @@ import clientPromise from "@/lib/mongodb"
 import { revalidatePath } from "next/cache"
 import { ObjectId } from "mongodb"
 
-// 1. Get all workflows
+// 1. Get ALL workflows (🔴 OPTIMIZED: List view ke liye sirf lightweight data laao)
 export async function getWorkflows() {
   try {
     const client = await clientPromise;
     const db = client.db("automation_db");
-    const workflows = await db.collection("workflows").find({}).sort({ updatedAt: -1 }).toArray();
     
-    // Convert ObjectId to string for Client Components
+    // PROJECTION: nodes aur edges ka heavy data drop kar do
+    const workflows = await db.collection("workflows")
+      .find({})
+      .project({ nodes: 0, edges: 0 }) 
+      .sort({ updatedAt: -1 })
+      .toArray();
+    
     return workflows.map(wf => ({ ...wf, _id: wf._id.toString() }));
   } catch (error) {
     console.error("Failed to fetch workflows:", error);
@@ -20,13 +25,38 @@ export async function getWorkflows() {
   }
 }
 
-// 2. Delete a workflow
+// 1.5 Get a SINGLE workflow's full data (🔴 NAYA: Builder me edit karne ke liye)
+export async function getWorkflowById(id: string) {
+  try {
+    const client = await clientPromise;
+    const db = client.db("automation_db");
+    const workflow = await db.collection("workflows").findOne({ _id: new ObjectId(id) });
+    
+    if (!workflow) return null;
+    return { ...workflow, _id: workflow._id.toString() };
+  } catch (error) {
+    console.error("Failed to fetch workflow:", error);
+    return null;
+  }
+}
+
+// 2. Delete a workflow (🔴 UPGRADED: With Ghost-Cleaning)
 export async function deleteWorkflow(id: string) {
   try {
     const client = await clientPromise;
     const db = client.db("automation_db");
+    
+    // Step 1: Workflow ko udao
     await db.collection("workflows").deleteOne({ _id: new ObjectId(id) });
+    
+    // Step 2: 🔴 THE FIX: Jin devices ke paas ye workflow assigned tha, unko 'Idle' kar do
+    await db.collection("devices").updateMany(
+      { "assignedWorkflow.id": id },
+      { $set: { assignedWorkflow: null } }
+    );
+
     revalidatePath('/workflows');
+    revalidatePath('/nodes'); // Nodes dashboard bhi refresh karo
     return { success: true };
   } catch (error) {
     console.error("Failed to delete workflow:", error);
@@ -34,8 +64,7 @@ export async function deleteWorkflow(id: string) {
   }
 }
 
-// web-dashboard/app/actions/workflows.ts (Append this function)
-
+// 3. Save / Create a workflow
 export async function saveWorkflow(id: string | null, name: string, description: string, nodes: any[], edges: any[]) {
   try {
     const client = await clientPromise;
@@ -51,13 +80,14 @@ export async function saveWorkflow(id: string | null, name: string, description:
     };
 
     if (id) {
-      // Agar purana workflow edit ho raha hai
       await db.collection("workflows").updateOne(
         { _id: new ObjectId(id) },
         { $set: workflowData }
       );
+      
+      // Optional Enhancement: Agar name update hua hai, to devices me bhi name sync kar sakte hain
+      // (Par abhi ke liye zaroori nahi hai)
     } else {
-      // Agar naya workflow ban raha hai
       await db.collection("workflows").insertOne({
         ...workflowData,
         createdAt: new Date()
@@ -70,7 +100,7 @@ export async function saveWorkflow(id: string | null, name: string, description:
     console.error("Failed to save workflow:", error);
     return { success: false };
   }
-}// (Save wala logic hum Visual Builder wale code mein jodege baad mein)
+}
 
 // 4. Duplicate a workflow
 export async function duplicateWorkflow(id: string) {
@@ -78,17 +108,14 @@ export async function duplicateWorkflow(id: string) {
     const client = await clientPromise;
     const db = client.db("automation_db");
     
-    // Step 1: Find the original workflow
     const originalWorkflow = await db.collection("workflows").findOne({ _id: new ObjectId(id) });
     
     if (!originalWorkflow) {
       return { success: false, error: "Workflow not found" };
     }
 
-    // Step 2: Extract everything EXCEPT the original _id
     const { _id, ...workflowData } = originalWorkflow;
 
-    // Step 3: Create the duplicated object with a modified name and fresh timestamps
     const duplicatedWorkflow = {
       ...workflowData,
       name: `${originalWorkflow.name} (Copy)`,
@@ -96,10 +123,8 @@ export async function duplicateWorkflow(id: string) {
       updatedAt: new Date()
     };
 
-    // Step 4: Insert as a new document
     await db.collection("workflows").insertOne(duplicatedWorkflow);
 
-    // Refresh the UI to show the new copy
     revalidatePath('/workflows');
     return { success: true };
   } catch (error) {

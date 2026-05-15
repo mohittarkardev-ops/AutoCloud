@@ -15,7 +15,6 @@ export async function sendNodeCommand(hardwareId: string, cmd: "START" | "STOP" 
       { $set: { [`pendingCommands.${port}`]: cmd } }
     );
 
-    // 🔴 NAYA: UI ko turant refresh karne ke liye taaki loading state update ho
     revalidatePath('/nodes');
     revalidatePath(`/nodes/${hardwareId}`);
 
@@ -56,15 +55,14 @@ export async function updateNodeStatus(hardwareId: string, status: "approved" | 
       { 
         $set: { 
           status,
-          // 🔴 THE FIX: Purane 'pendingCommand' ko hatakar naya multi-port object clear kiya
           ...(status === 'blocked' ? { assignedWorkflow: null, pendingCommands: {} } : {})
         } 
       }
     );
 
     revalidatePath('/nodes');
-    revalidatePath(`/nodes/${hardwareId}`); // Detail page bhi update hoga
-    revalidatePath('/'); // Overview page bhi update hoga
+    revalidatePath(`/nodes/${hardwareId}`); 
+    revalidatePath('/'); 
     return { success: true };
   } catch (error) {
     console.error("Status Update Error:", error);
@@ -72,13 +70,21 @@ export async function updateNodeStatus(hardwareId: string, status: "approved" | 
   }
 }
 
-// 4. Delete Node Logic
+// 4. Delete Node Logic (🔴 UPGRADED with Ghost-Cleaning)
 export async function deleteNode(hardwareId: string) {
   try {
     const client = await clientPromise;
     const db = client.db("automation_db");
 
+    // 1. Pehle PC ko 'devices' table se udao
     await db.collection("devices").deleteOne({ hardwareId });
+
+    // 2. 🔴 THE FIX: Groups me check karo, agar ye PC kisi group me tha to usko wahan se bhi 'pull' (delete) kar do
+    // Taki system me koi 'Ghost ID' na bache!
+    await db.collection("deviceGroups").updateMany(
+      { deviceIds: hardwareId },
+      { $pull: { deviceIds: hardwareId } as any } 
+    );
 
     revalidatePath('/nodes');
     revalidatePath('/'); 

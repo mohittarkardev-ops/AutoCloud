@@ -11,8 +11,11 @@ import { ExportWorkflowButton } from "@/components/ExportWorkflowButton"
 import { ImportWorkflowButton } from "@/components/ImportWorkflowButton" 
 import { Sidebar } from "@/components/Sidebar" 
 
+// 🔴 THE FIX 1: Next.js ko strict order ki is page ko cache na kare!
+export const dynamic = 'force-dynamic';
+
 export default async function WorkflowsListPage() {
-  // Fetching data on the server side
+  // Fetching lightweight data on the server side
   const workflows: any[] = await getWorkflows();
 
   return (
@@ -131,7 +134,8 @@ export default async function WorkflowsListPage() {
                             </Button>
                           </Link>
 
-                          <ExportWorkflowButton workflow={wf} />
+                          {/* 🔴 THE FIX 2: Export Button ko ab sirf ID aur Name bhejenge */}
+                          <ExportWorkflowButton id={wf._id} name={wf.name} />
                           
                           <DuplicateWorkflowButton id={wf._id} />
 
