@@ -2,13 +2,14 @@
 import { NextResponse } from 'next/server';
 import clientPromise from '@/lib/mongodb';
 import { ObjectId } from 'mongodb';
-import { queueStatusUpdate } from '@/lib/batchUpdater'; // 👈 NAYA IMPORT (Memory Queue)
+import { queueStatusUpdate } from '@/lib/batchUpdater';
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     
-    const { hardwareId, hostname, currentPort, isExecuting, liveStatus } = body;
+    // ✂️ liveStatus yahan se hata diya
+    const { hardwareId, hostname, currentPort, isExecuting } = body;
 
     if (!hardwareId || !currentPort) {
       return NextResponse.json({ success: false, error: 'Hardware ID and Port required' }, { status: 400 });
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
     const existingDevice = await devicesCollection.findOne({ hardwareId });
 
     if (!existingDevice) {
-      // Naya Registration (Pehli baar open hone par limit check ki zaroorat nahi)
+      // ✂️ Naye registration mein bhi liveStatus nahi banega
       await devicesCollection.insertOne({
         hardwareId, 
         hostname: hostname || "Unknown PC", 
@@ -38,7 +39,6 @@ export async function POST(req: Request) {
         liveMetrics: { 
             [currentPort]: { 
               isExecuting: isExecuting || false, 
-              currentStatus: liveStatus || { currentStep: "Idle", progress: 0 }, 
               lastSeen: currentTime 
             }
         }
@@ -46,19 +46,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, message: "Registered.", status: "pending" }, { status: 201 });
     } 
     else {
-      // 🔴 THE GATEKEEPER: Max Instances Limit Check
+      // THE GATEKEEPER: Max Instances Limit Check
       const maxInstances = existingDevice.maxInstances || 3;
       const liveMetrics = existingDevice.liveMetrics || {};
 
       let activePortsCount = 0;
       let isCurrentPortAlreadyActive = false;
 
-      // Puraane aur naye sabhi ports ko check karo ki kitne "Zinda" (Active) hain
       for (const [port, data] of Object.entries(liveMetrics)) {
         const portData = data as any;
         if (portData && portData.lastSeen) {
           const lastSeenTime = new Date(portData.lastSeen).getTime();
-          // Agar port ne pichle 60 seconds mein kuch bola hai, matlab wo active hai
           if (now - lastSeenTime < 60000) {
             activePortsCount++;
             if (port === String(currentPort)) {
@@ -68,52 +66,34 @@ export async function POST(req: Request) {
         }
       }
 
-      // Agar ye ek NAYA port hai aur Limit cross ho rahi hai -> REJECT ENTRY!
       if (!isCurrentPortAlreadyActive && activePortsCount >= maxInstances) {
-        console.log(`[BLOCKED] ${hardwareId} tried to open port ${currentPort}. Max Limit (${maxInstances}) reached.`);
-        return NextResponse.json({
-          success: false,
-          error: "LIMIT_REACHED",
-          max: maxInstances
-        }, { status: 403 }); // 403 Forbidden
+        return NextResponse.json({ success: false, error: "LIMIT_REACHED", max: maxInstances }, { status: 403 });
       }
 
-      // 🔴 THE MAGIC: Sirf wahi data update karo jo actually aaya hai (Undefined Bypass)
+      // ✂️ Sirf Zaroori Data Update Hoga (No Live Status)
       const updateData: any = {
         lastSeen: currentTime,
         hostname: hostname || existingDevice.hostname,
-        [`liveMetrics.${currentPort}.lastSeen`]: currentTime // Har port ka apna online status
+        [`liveMetrics.${currentPort}.lastSeen`]: currentTime
       };
 
       if (isExecuting !== undefined) {
         updateData[`liveMetrics.${currentPort}.isExecuting`] = isExecuting;
       }
-      if (liveStatus !== undefined) {
-        updateData[`liveMetrics.${currentPort}.currentStatus`] = liveStatus || existingDevice.liveMetrics?.[currentPort]?.currentStatus;
-      }
 
-      // 🔴 COMMAND FETCH & HYBRID ROUTER
       const myCommand = existingDevice.pendingCommands?.[currentPort];
       const hasStopSafety = existingDevice.pendingCommands?.[currentPort] === "STOP" && !isExecuting;
 
       if (myCommand || hasStopSafety) {
-          // CASE 1: Agar koi command deni hai, to use INSTANT database mein update karo 
-          // taaki command 2 baar na chali jaye (Race Condition fix)
           const updateQuery: any = { 
               $set: updateData, 
               $unset: { [`pendingCommands.${currentPort}`]: "" } 
           };
           await devicesCollection.updateOne({ hardwareId }, updateQuery);
-          
-          if (myCommand) {
-              console.log(`Command [${myCommand}] delivered to ${hardwareId}:${currentPort} (Instant DB Hit)`);
-          }
       } else {
-          // CASE 2: Normal Ping (99% traffic). Isko direct RAM (Memory Queue) mein bhej do! (Zero DB Load)
           queueStatusUpdate(hardwareId, updateData);
       }
 
-      // Workflow fetch (Bypass if no ID assigned to save Reads)
       let fullWorkflowData = existingDevice.assignedWorkflow;
       if (fullWorkflowData && fullWorkflowData.id) {
         try {
@@ -126,7 +106,7 @@ export async function POST(req: Request) {
         success: true, 
         status: existingDevice.status, 
         assignedFlow: fullWorkflowData, 
-        pendingCommand: myCommand || null // 🔴 Python ko sirf uski command milegi
+        pendingCommand: myCommand || null 
       }, { status: 200 });
     }
     
