@@ -68,17 +68,24 @@ export async function POST(req: Request) {
       }
 
       // 🔴 THE MAGIC: Sirf aane wale port ka data update hoga, baaki ports safe rahenge
-      const updateQuery: any = {
-        $set: { 
-          lastSeen: currentTime, 
-          hostname: hostname || existingDevice.hostname,
-          [`liveMetrics.${currentPort}.isExecuting`]: isExecuting,
-          [`liveMetrics.${currentPort}.currentStatus`]: liveStatus || existingDevice.liveMetrics?.[currentPort]?.currentStatus,
-          [`liveMetrics.${currentPort}.lastSeen`]: currentTime // Har port ka apna online status
-        }
-      };
-      
-      await devicesCollection.updateOne({ hardwareId }, updateQuery);
+      // 🔴 THE MAGIC: Sirf wahi data update karo jo actually aaya hai, undefined ko ignore karo
+const updateData: any = {
+  lastSeen: currentTime,
+  hostname: hostname || existingDevice.hostname,
+  [`liveMetrics.${currentPort}.lastSeen`]: currentTime // Har port ka apna online status
+};
+
+// Agar python tool ne ye data bheja hai, tabhi ise query mein add karo, warna DB hang ho jayega
+if (isExecuting !== undefined) {
+  updateData[`liveMetrics.${currentPort}.isExecuting`] = isExecuting;
+}
+if (liveStatus !== undefined) {
+  updateData[`liveMetrics.${currentPort}.currentStatus`] = liveStatus || existingDevice.liveMetrics?.[currentPort]?.currentStatus;
+}
+
+const updateQuery = { $set: updateData };
+
+await devicesCollection.updateOne({ hardwareId }, updateQuery);
 
       // Workflow fetch
       let fullWorkflowData = existingDevice.assignedWorkflow;
