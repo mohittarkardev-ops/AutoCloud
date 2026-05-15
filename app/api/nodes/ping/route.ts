@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import clientPromise from '@/lib/mongodb';
 import { ObjectId } from 'mongodb';
+import { queueStatusUpdate } from '@/lib/batchUpdater'; // 👈 NAYA IMPORT (Memory Queue)
 
 export async function POST(req: Request) {
   try {
@@ -25,11 +26,21 @@ export async function POST(req: Request) {
     if (!existingDevice) {
       // Naya Registration (Pehli baar open hone par limit check ki zaroorat nahi)
       await devicesCollection.insertOne({
-        hardwareId, hostname: hostname || "Unknown PC", alias: "New Unassigned PC",
-        status: "pending", maxInstances: 3, assignedWorkflow: null, pendingCommands: {},
-        lastSeen: currentTime, createdAt: currentTime,
+        hardwareId, 
+        hostname: hostname || "Unknown PC", 
+        alias: "New Unassigned PC",
+        status: "pending", 
+        maxInstances: 3, 
+        assignedWorkflow: null, 
+        pendingCommands: {},
+        lastSeen: currentTime, 
+        createdAt: currentTime,
         liveMetrics: { 
-            [currentPort]: { isExecuting: isExecuting || false, currentStatus: liveStatus || { currentStep: "Idle", progress: 0 }, lastSeen: currentTime }
+            [currentPort]: { 
+              isExecuting: isExecuting || false, 
+              currentStatus: liveStatus || { currentStep: "Idle", progress: 0 }, 
+              lastSeen: currentTime 
+            }
         }
       });
       return NextResponse.json({ success: true, message: "Registered.", status: "pending" }, { status: 201 });
@@ -67,27 +78,42 @@ export async function POST(req: Request) {
         }, { status: 403 }); // 403 Forbidden
       }
 
-      // 🔴 THE MAGIC: Sirf aane wale port ka data update hoga, baaki ports safe rahenge
-      // 🔴 THE MAGIC: Sirf wahi data update karo jo actually aaya hai, undefined ko ignore karo
-const updateData: any = {
-  lastSeen: currentTime,
-  hostname: hostname || existingDevice.hostname,
-  [`liveMetrics.${currentPort}.lastSeen`]: currentTime // Har port ka apna online status
-};
+      // 🔴 THE MAGIC: Sirf wahi data update karo jo actually aaya hai (Undefined Bypass)
+      const updateData: any = {
+        lastSeen: currentTime,
+        hostname: hostname || existingDevice.hostname,
+        [`liveMetrics.${currentPort}.lastSeen`]: currentTime // Har port ka apna online status
+      };
 
-// Agar python tool ne ye data bheja hai, tabhi ise query mein add karo, warna DB hang ho jayega
-if (isExecuting !== undefined) {
-  updateData[`liveMetrics.${currentPort}.isExecuting`] = isExecuting;
-}
-if (liveStatus !== undefined) {
-  updateData[`liveMetrics.${currentPort}.currentStatus`] = liveStatus || existingDevice.liveMetrics?.[currentPort]?.currentStatus;
-}
+      if (isExecuting !== undefined) {
+        updateData[`liveMetrics.${currentPort}.isExecuting`] = isExecuting;
+      }
+      if (liveStatus !== undefined) {
+        updateData[`liveMetrics.${currentPort}.currentStatus`] = liveStatus || existingDevice.liveMetrics?.[currentPort]?.currentStatus;
+      }
 
-const updateQuery = { $set: updateData };
+      // 🔴 COMMAND FETCH & HYBRID ROUTER
+      const myCommand = existingDevice.pendingCommands?.[currentPort];
+      const hasStopSafety = existingDevice.pendingCommands?.[currentPort] === "STOP" && !isExecuting;
 
-await devicesCollection.updateOne({ hardwareId }, updateQuery);
+      if (myCommand || hasStopSafety) {
+          // CASE 1: Agar koi command deni hai, to use INSTANT database mein update karo 
+          // taaki command 2 baar na chali jaye (Race Condition fix)
+          const updateQuery: any = { 
+              $set: updateData, 
+              $unset: { [`pendingCommands.${currentPort}`]: "" } 
+          };
+          await devicesCollection.updateOne({ hardwareId }, updateQuery);
+          
+          if (myCommand) {
+              console.log(`Command [${myCommand}] delivered to ${hardwareId}:${currentPort} (Instant DB Hit)`);
+          }
+      } else {
+          // CASE 2: Normal Ping (99% traffic). Isko direct RAM (Memory Queue) mein bhej do! (Zero DB Load)
+          queueStatusUpdate(hardwareId, updateData);
+      }
 
-      // Workflow fetch
+      // Workflow fetch (Bypass if no ID assigned to save Reads)
       let fullWorkflowData = existingDevice.assignedWorkflow;
       if (fullWorkflowData && fullWorkflowData.id) {
         try {
@@ -96,25 +122,10 @@ await devicesCollection.updateOne({ hardwareId }, updateQuery);
         } catch (e) { console.error("Workflow error:", e); }
       }
 
-      // 🔴 COMMAND FETCH: Sirf is specific port ki command uthao
-      const myCommand = existingDevice.pendingCommands?.[currentPort];
-      
-      if (myCommand) {
-        // Command bhejte hi DB se is port ki command delete (unset) kar do
-        await devicesCollection.updateOne(
-          { hardwareId },
-          { $unset: { [`pendingCommands.${currentPort}`]: "" } }
-        );
-        console.log(`Command [${myCommand}] delivered to ${hardwareId}:${currentPort}`);
-      }
-
-      // Special case: Agar STOP ke baad ruk gaya hai
-      if (myCommand === "STOP" && !isExecuting) {
-          await devicesCollection.updateOne({ hardwareId }, { $unset: { [`pendingCommands.${currentPort}`]: "" } });
-      }
-
       return NextResponse.json({
-        success: true, status: existingDevice.status, assignedFlow: fullWorkflowData, 
+        success: true, 
+        status: existingDevice.status, 
+        assignedFlow: fullWorkflowData, 
         pendingCommand: myCommand || null // 🔴 Python ko sirf uski command milegi
       }, { status: 200 });
     }
