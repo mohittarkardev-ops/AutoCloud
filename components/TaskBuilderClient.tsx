@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useMemo } from "react"
+import { useState, useTransition, useMemo, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { assignTaskToNodes } from "@/app/actions/tasks"
-import { Search, MonitorSmartphone, Send, CheckCircle2, Network, ExternalLink, Layers, Users } from "lucide-react"
+import { Search, MonitorSmartphone, Send, CheckCircle2, Network, ExternalLink, Layers, Users, ChevronLeft, ChevronRight } from "lucide-react"
 import Link from "next/link"
 
 interface TaskBuilderClientProps {
@@ -26,8 +26,17 @@ export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [selectedTask, setSelectedTask] = useState<string>("");
   
+  // 🔴 NAYA: Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+
   const [isPending, startTransition] = useTransition();
   const [successMsg, setSuccessMsg] = useState(false);
+
+  // Reset page when search or tab changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, activeTab]);
 
   // --- FILTER LOGIC ---
   const filteredNodes = useMemo(() => {
@@ -47,16 +56,30 @@ export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [
     );
   }, [deviceGroups, searchTerm]);
 
+  // 🔴 NAYA: Pagination Calculations
+  const totalPages = Math.ceil(filteredNodes.length / itemsPerPage);
+  const paginatedNodes = filteredNodes.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
   // --- TOGGLE LOGIC (NODES) ---
   const toggleNode = (hardwareId: string) => {
     setSelectedNodes(prev => prev.includes(hardwareId) ? prev.filter(id => id !== hardwareId) : [...prev, hardwareId]);
   };
 
+  // 🔴 FIX: Robust Bulk Selection (Works perfectly with search & pagination)
+  const isAllFilteredSelected = filteredNodes.length > 0 && filteredNodes.every(n => selectedNodes.includes(n.hardwareId));
+  
   const toggleAllNodes = () => {
-    if (selectedNodes.length === filteredNodes.length) {
-      setSelectedNodes([]);
+    if (isAllFilteredSelected) {
+      // Remove all current filtered items from selection
+      const filteredIds = filteredNodes.map(n => n.hardwareId);
+      setSelectedNodes(prev => prev.filter(id => !filteredIds.includes(id)));
     } else {
-      setSelectedNodes(filteredNodes.map(n => n.hardwareId));
+      // Add all current filtered items to selection
+      const filteredIds = filteredNodes.map(n => n.hardwareId);
+      setSelectedNodes(prev => Array.from(new Set([...prev, ...filteredIds])));
     }
   };
 
@@ -65,19 +88,21 @@ export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [
     setSelectedGroups(prev => prev.includes(groupId) ? prev.filter(id => id !== groupId) : [...prev, groupId]);
   };
 
+  const isAllGroupsSelected = filteredGroups.length > 0 && filteredGroups.every(g => selectedGroups.includes(g._id));
+
   const toggleAllGroups = () => {
-    if (selectedGroups.length === filteredGroups.length) {
-      setSelectedGroups([]);
+    if (isAllGroupsSelected) {
+      const filteredIds = filteredGroups.map(g => g._id);
+      setSelectedGroups(prev => prev.filter(id => !filteredIds.includes(id)));
     } else {
-      setSelectedGroups(filteredGroups.map(g => g._id));
+      const filteredIds = filteredGroups.map(g => g._id);
+      setSelectedGroups(prev => Array.from(new Set([...prev, ...filteredIds])));
     }
   };
 
-  // 🔴 FIX: Helper to accurately calculate total devices inside selected groups
   const getTotalDevicesFromGroups = () => {
     const idsSet = new Set<string>();
     selectedGroups.forEach(groupId => {
-      // Find all approved nodes that belong to this group
       approvedNodes.filter(n => n.groupId === groupId).forEach(n => idsSet.add(n.hardwareId));
     });
     return idsSet.size;
@@ -90,13 +115,11 @@ export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [
     if (activeTab === 'groups' && selectedGroups.length === 0) return;
     
     const taskName = dbWorkflows.find(w => w._id === selectedTask)?.name || "Unknown Task";
-
     let targetHardwareIds: string[] = [];
 
     if (activeTab === 'nodes') {
       targetHardwareIds = selectedNodes;
     } else {
-      // 🔴 FIX: Extract hardware IDs using our relational approach
       const idsSet = new Set<string>();
       selectedGroups.forEach(groupId => {
         approvedNodes
@@ -116,7 +139,6 @@ export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [
       setSuccessMsg(true);
       setTimeout(() => setSuccessMsg(false), 3000);
       
-      // Reset selections
       setSelectedNodes([]);
       setSelectedGroups([]);
       setSelectedTask("");
@@ -168,9 +190,9 @@ export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [
               <TableRow>
                 <TableHead className="w-[50px] pl-4">
                   {activeTab === 'nodes' ? (
-                    <Checkbox checked={filteredNodes.length > 0 && selectedNodes.length === filteredNodes.length} onCheckedChange={toggleAllNodes} />
+                    <Checkbox checked={isAllFilteredSelected} onCheckedChange={toggleAllNodes} />
                   ) : (
-                    <Checkbox checked={filteredGroups.length > 0 && selectedGroups.length === filteredGroups.length} onCheckedChange={toggleAllGroups} />
+                    <Checkbox checked={isAllGroupsSelected} onCheckedChange={toggleAllGroups} />
                   )}
                 </TableHead>
                 <TableHead>{activeTab === 'nodes' ? 'Hostname' : 'Group Name'}</TableHead>
@@ -182,13 +204,13 @@ export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [
             <TableBody>
               {/* --- NODES VIEW --- */}
               {activeTab === 'nodes' && (
-                filteredNodes.length === 0 ? (
+                paginatedNodes.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center h-32 text-muted-foreground">No matching approved nodes found.</TableCell>
                   </TableRow>
                 ) : (
-                  filteredNodes.map(node => (
-                    <TableRow key={node.hardwareId} className="cursor-pointer" onClick={() => toggleNode(node.hardwareId)}>
+                  paginatedNodes.map(node => (
+                    <TableRow key={node.hardwareId} className="cursor-pointer hover:bg-muted/30" onClick={() => toggleNode(node.hardwareId)}>
                       <TableCell className="pl-4">
                         <Checkbox checked={selectedNodes.includes(node.hardwareId)} onCheckedChange={() => toggleNode(node.hardwareId)} onClick={(e) => e.stopPropagation()} />
                       </TableCell>
@@ -219,11 +241,9 @@ export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [
                   </TableRow>
                 ) : (
                   filteredGroups.map(group => {
-                    // 🔴 FIX: Dynamically count devices in this group
                     const groupDeviceCount = approvedNodes.filter(n => n.groupId === group._id).length;
-
                     return (
-                      <TableRow key={group._id} className="cursor-pointer" onClick={() => toggleGroup(group._id)}>
+                      <TableRow key={group._id} className="cursor-pointer hover:bg-muted/30" onClick={() => toggleGroup(group._id)}>
                         <TableCell className="pl-4">
                           <Checkbox checked={selectedGroups.includes(group._id)} onCheckedChange={() => toggleGroup(group._id)} onClick={(e) => e.stopPropagation()} />
                         </TableCell>
@@ -251,11 +271,28 @@ export function TaskBuilderClient({ approvedNodes, dbWorkflows, deviceGroups = [
           </Table>
         </ScrollArea>
         
+        {/* 🔴 NAYA: Pagination Controls for Nodes */}
+        {activeTab === 'nodes' && totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-2 bg-muted/10 border-t border-border/50">
+            <span className="text-[11px] text-muted-foreground font-medium">
+              Page {currentPage} of {totalPages}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="h-6 px-2">
+                <ChevronLeft size={14} />
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="h-6 px-2">
+                <ChevronRight size={14} />
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="p-3 border-t bg-muted/20 text-xs text-muted-foreground font-medium flex justify-between items-center">
           <span>
             {activeTab === 'nodes' 
-              ? `${selectedNodes.length} of ${filteredNodes.length} nodes selected` 
-              : `${selectedGroups.length} of ${filteredGroups.length} groups selected`}
+              ? `${selectedNodes.length} of ${filteredNodes.length} filtered nodes selected` 
+              : `${selectedGroups.length} of ${filteredGroups.length} filtered groups selected`}
           </span>
           {activeTab === 'groups' && selectedGroups.length > 0 && (
             <span className="text-primary font-bold">{getTotalDevicesFromGroups()} Unique PCs Total</span>
