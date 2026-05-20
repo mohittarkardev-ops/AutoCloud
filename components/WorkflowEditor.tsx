@@ -436,7 +436,14 @@ function buildWorkflowJSON(nodes: Node[]) {
     // Core nodes
     if (d.nodeType === 'trigger')    return base;
     if (d.nodeType === 'open_url')   return { ...base, url: c.url };
-    if (d.nodeType === 'loop_excel') return { ...base, file: c.fileName || '[provided_by_runner]', columns: Array.from(allColumns) };
+    if (d.nodeType === 'loop_excel') return { 
+      ...base, 
+      file: c.fileName || '[provided_by_runner]', 
+      columns: Array.from(allColumns),
+      variable_name: c.variableName || 'PC',        // 🔴 ADDED: PC Column mapping
+      status_column: c.extractFields || 'Status',   // 🔴 ADDED: Status Column mapping
+      count_column: c.variableAttr || 'Attempt_Count' // 🔴 ADDED: Attempt Count mapping
+    };
     if (d.nodeType === 'extract')    return { ...base, fields: c.extractFields, output_file: c.outputFile };
 
     if (d.nodeType === 'wait')       return {
