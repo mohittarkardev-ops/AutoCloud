@@ -301,7 +301,7 @@ const AutomationNode = ({ data, selected }: { data: AutomationNodeData; selected
       }
       case 'wait':           return cfg.waitType === 'time' ? `Wait ${cfg.waitTimeout}s` : (cfg.waitTarget || 'No target');
       case 'if_else':        return `IF ${cfg.conditionLeft || '?'} ${cfg.conditionOperator || ''} ${cfg.conditionRight || ''}`.trim();
-      case 'loop':           return `Repeat ${cfg.loopCount || 3}×`;
+      case 'condition_loop': return `Loop max ${cfg.loopCount ?? 3}× until condition met`;
       case 'js_inject':      return cfg.jsCode ? cfg.jsCode.substring(0, 30) + '…' : 'No code';
       case 'extract':        return cfg.extractFields ? cfg.extractFields.split('\n')[0] : 'No fields';
       case 'switch_iframe':  return cfg.action === 'exit' ? 'Exit → Main Page' : `Enter: ${cfg.selector || '—'}`;
@@ -413,6 +413,15 @@ function buildWorkflowJSON(nodes: Node[]) {
     }
   };
 
+  // 👇 ये नया Helper Function ऐड करें 
+  const getSequenceFromId = (targetId?: string) => {
+    if (!targetId) return '';
+    // अगर गलती से यूज़र ने मैनुअल नंबर ही डाल दिया हो
+    if (!targetId.startsWith('node_')) return Number(targetId) || ''; 
+    const targetNode = nodes.find(n => n.id === targetId);
+    return targetNode ? (targetNode.data as unknown as AutomationNodeData).sequence : '';
+  };
+
   const steps = ordered.map((node) => {
     const d = node.data as unknown as AutomationNodeData;
     const c = d.config || {};
@@ -444,7 +453,22 @@ function buildWorkflowJSON(nodes: Node[]) {
       status_column: c.extractFields || 'Status',   // 🔴 ADDED: Status Column mapping
       count_column: c.variableAttr || 'Attempt_Count' // 🔴 ADDED: Attempt Count mapping
     };
-    if (d.nodeType === 'extract')    return { ...base, fields: c.extractFields, output_file: c.outputFile };
+    if (d.nodeType === 'extract') {
+      const mappings: Record<string, string> = {};
+      const lines = (c.extractFields || '').split('\n');
+      for (const line of lines) {
+        if (line.includes('=')) {
+          const [col, ...valParts] = line.split('=');
+          const val = valParts.join('=').trim();
+          if (col.trim() && val) {
+            mappings[col.trim()] = val;
+            extractTokens(val); 
+            allColumns.add(col.trim()); 
+          }
+        }
+      }
+      return { ...base, type: 'update_excel', mappings };
+    }
 
     if (d.nodeType === 'wait')       return {
       ...base,
@@ -453,6 +477,7 @@ function buildWorkflowJSON(nodes: Node[]) {
       timeout_seconds: Number(c.waitTimeout ?? 10),
     };
 
+    // 🟢 2. इसे ढूँढकर रिप्लेस करें
     if (d.nodeType === 'if_else')    return {
       ...base,
       condition: {
@@ -461,11 +486,23 @@ function buildWorkflowJSON(nodes: Node[]) {
         operator: c.conditionOperator || 'is_empty',
         right:    c.conditionRight || '',
       },
-      true_branch:  c.trueBranch  || '',
-      false_branch: c.falseBranch || '',
+      // 👇 यहाँ हमने नया फंक्शन लगा दिया है
+      true_branch:  getSequenceFromId(c.trueBranch),
+      false_branch: getSequenceFromId(c.falseBranch),
     };
+    // 🟢 यहाँ तक
 
-    if (d.nodeType === 'loop')       return { ...base, repeat: Number(c.loopCount ?? 3) };
+    if (d.nodeType === 'condition_loop') return {
+      ...base,
+      condition: {
+        type:     c.conditionType || 'element_exists',
+        left:     c.conditionLeft || '',
+        operator: c.conditionOperator || 'is_empty',
+        right:    c.conditionRight || '',
+      },
+      jump_back_to: getSequenceFromId(c.trueBranch), // trueBranch को जंप टारगेट की तरह इस्तेमाल किया है
+      max_iterations: Number(c.loopCount ?? 3),
+    };
 
     if (d.nodeType === 'js_inject') {
       extractTokens(c.jsCode || '');
@@ -586,14 +623,18 @@ function buildWorkflowJSON(nodes: Node[]) {
 // ─────────────────────────────────────────────
 // CONFIG PANEL
 // ─────────────────────────────────────────────
+// 🟢 3. इसे ढूँढकर रिप्लेस करें
 const ConfigPanel = ({
+  nodes, // <-- 👇 ये नया ऐड किया है
   selectedNode, updateNodeData, availableColumns, setAvailableColumns,
 }: {
+  nodes: Node[]; // <-- 👇 ये नया ऐड किया है
   selectedNode: Node | null;
   updateNodeData: (id: string, data: Partial<AutomationNodeData>) => void;
   availableColumns: string[];
   setAvailableColumns: (cols: string[]) => void;
 }) => {
+// 🟢 यहाँ तक
   const [showPresets, setShowPresets] = useState(false);
   const [localSeq, setLocalSeq] = useState<string | number>('');
 
@@ -1091,38 +1132,139 @@ const ConfigPanel = ({
               )}
             </div>
 
-            {/* 🔴 UPGRADED: IF/ELSE Jump Logic */}
-            <div className="grid grid-cols-2 gap-2">
+            {/* 🟢 5. इसे ढूँढकर पूरा रिप्लेस करें */}
+            {/* 🔴 UPGRADED: IF/ELSE Jump Logic (Smart Dropdown) */}
+            <div className="space-y-3 pt-2">
               <Field label="✅ If TRUE → Jump to Step">
-                <input type="number" min={1} placeholder="e.g. 5"
-                  value={cfg.trueBranch || ''} onChange={e => updateCfg('trueBranch', e.target.value)}
-                  className="cp-input text-[11px] font-bold text-green-600" />
+                <select 
+                  className="cp-select text-[11px] font-bold text-green-600"
+                  value={cfg.trueBranch || ''} 
+                  onChange={e => updateCfg('trueBranch', e.target.value)}
+                >
+                  <option value="" className="text-muted-foreground">Select target step...</option>
+                  {nodes
+                    .filter(n => (n.data as unknown as AutomationNodeData).sequence > 0)
+                    .sort((a, b) => (a.data as unknown as AutomationNodeData).sequence - (b.data as unknown as AutomationNodeData).sequence)
+                    .map(n => {
+                      const nd = n.data as unknown as AutomationNodeData;
+                      return (
+                        <option key={n.id} value={n.id} className="text-foreground">
+                          Step {nd.sequence}: {nd.label}
+                        </option>
+                      );
+                    })}
+                </select>
               </Field>
+              
               <Field label="❌ If FALSE → Jump to Step">
-                <input type="number" min={1} placeholder="e.g. 8"
-                  value={cfg.falseBranch || ''} onChange={e => updateCfg('falseBranch', e.target.value)}
-                  className="cp-input text-[11px] font-bold text-red-600" />
+                <select 
+                  className="cp-select text-[11px] font-bold text-red-600"
+                  value={cfg.falseBranch || ''} 
+                  onChange={e => updateCfg('falseBranch', e.target.value)}
+                >
+                  <option value="" className="text-muted-foreground">Select target step...</option>
+                  {nodes
+                    .filter(n => (n.data as unknown as AutomationNodeData).sequence > 0)
+                    .sort((a, b) => (a.data as unknown as AutomationNodeData).sequence - (b.data as unknown as AutomationNodeData).sequence)
+                    .map(n => {
+                      const nd = n.data as unknown as AutomationNodeData;
+                      return (
+                        <option key={n.id} value={n.id} className="text-foreground">
+                          Step {nd.sequence}: {nd.label}
+                        </option>
+                      );
+                    })}
+                </select>
               </Field>
             </div>
           </div>
         )}
 
         {/* ═══════════════════════════════════════════
-            LOOP N TIMES
+            SMART RETRY LOOP (DO-WHILE)
         ═══════════════════════════════════════════ */}
-        {/* ═══════════════════════════════════════════
-            LOOP N TIMES
-        ═══════════════════════════════════════════ */}
-        {d.nodeType === 'loop' && (
+        {d.nodeType === 'condition_loop' && (
           <div className="space-y-3">
-            <Field label="Repeat Count (How many times?)">
-              <input type="number" min={1} max={999} value={cfg.loopCount ?? 3}
-                onChange={e => updateCfg('loopCount', Number(e.target.value))} className="cp-input" />
-            </Field>
-            <Field label="Steps to Repeat" hint="Comma-separated step numbers (e.g. 5,6,7)">
-              <input type="text" placeholder="5,6,7" value={cfg.action || ''}
-                onChange={e => updateCfg('action', e.target.value)} className="cp-input font-mono text-[11px]" />
-            </Field>
+            <div className="bg-fuchsia-500/5 border border-fuchsia-500/15 rounded-lg p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-fuchsia-600 dark:text-fuchsia-400 mb-3 flex items-center gap-1.5">
+                <RefreshCw size={11} /> Smart Retry Loop
+              </p>
+              
+              <div className="bg-fuchsia-500/8 rounded-md p-2 text-[10px] text-fuchsia-700 dark:text-fuchsia-300 mb-4 leading-relaxed">
+                <b>Logic:</b> It checks the <b>Exit Condition</b>. If met, it breaks the loop and goes to the next step. If NOT met, it jumps back to the target step.
+              </div>
+
+              <Field label="Exit Condition (Stop looping when...)">
+                <select className="cp-select" value={cfg.conditionType || 'element_exists'}
+                  onChange={e => updateCfg('conditionType', e.target.value as never)}>
+                  <optgroup label="Element-based">
+                    <option value="element_exists">Element exists on page</option>
+                    <option value="element_text_equals">Element text equals</option>
+                    <option value="element_text_contains">Element text contains</option>
+                  </optgroup>
+                  <optgroup label="Variable / Runtime">
+                    <option value="variable_empty">Variable is empty</option>
+                    <option value="variable_equals">Variable equals value</option>
+                    <option value="variable_contains">Variable contains text</option>
+                  </optgroup>
+                </select>
+              </Field>
+
+              <Field label="Left side (selector or {{variable}})">
+                <input type="text" placeholder="#selector or {{variable_name}}"
+                  value={cfg.conditionLeft || ''} onChange={e => updateCfg('conditionLeft', e.target.value)}
+                  className="cp-input font-mono text-[11px]" />
+              </Field>
+
+              <Field label="Operator">
+                <select className="cp-select" value={cfg.conditionOperator || 'is_empty'}
+                  onChange={e => updateCfg('conditionOperator', e.target.value as never)}>
+                  <option value="is_empty">is empty</option>
+                  <option value="is_not_empty">is NOT empty</option>
+                  <option value="equals">equals (exact)</option>
+                  <option value="not_equals">does NOT equal</option>
+                  <option value="contains">contains</option>
+                  <option value="not_contains">does NOT contain</option>
+                </select>
+              </Field>
+
+              {!['is_empty', 'is_not_empty'].includes(cfg.conditionOperator || 'is_empty') && (
+                <Field label="Right side (comparison value)">
+                  <input type="text" placeholder="text or {{variable}}"
+                    value={cfg.conditionRight || ''} onChange={e => updateCfg('conditionRight', e.target.value)}
+                    className="cp-input font-mono text-[11px]" />
+                </Field>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-fuchsia-500/15">
+                <Field label="↺ Jump Back To">
+                  <select 
+                    className="cp-select text-[11px] font-bold text-amber-600"
+                    value={cfg.trueBranch || ''} 
+                    onChange={e => updateCfg('trueBranch', e.target.value)}
+                  >
+                    <option value="" className="text-muted-foreground">Select step...</option>
+                    {nodes
+                      .filter(n => (n.data as unknown as AutomationNodeData).sequence > 0 && n.id !== selectedNode.id)
+                      .sort((a, b) => (a.data as unknown as AutomationNodeData).sequence - (b.data as unknown as AutomationNodeData).sequence)
+                      .map(n => {
+                        const nd = n.data as unknown as AutomationNodeData;
+                        return (
+                          <option key={n.id} value={n.id} className="text-foreground">
+                            Step {nd.sequence}: {nd.label}
+                          </option>
+                        );
+                      })}
+                  </select>
+                </Field>
+                <Field label="Max Loops (Safety)">
+                  <input type="number" min={1} max={50} value={cfg.loopCount ?? 3}
+                    onChange={e => updateCfg('loopCount', Number(e.target.value))} 
+                    className="cp-input text-[11px] font-bold text-foreground" 
+                  />
+                </Field>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1142,20 +1284,39 @@ const ConfigPanel = ({
         )}
 
         {/* ═══════════════════════════════════════════
-            EXTRACT
+            UPDATE EXCEL ROW (Multi-Column)
         ═══════════════════════════════════════════ */}
         {d.nodeType === 'extract' && (
-          <>
-            <Field label="Fields to Extract" hint="Format: Label: #selector — one per line">
-              <textarea value={cfg.extractFields || ''} onChange={e => updateCfg('extractFields', e.target.value)}
-                placeholder={"Premium: #premium-amount\nQuote No: .quote-id\nPolicy Date: #pol-date"}
-                className="cp-textarea min-h-[90px]" />
-            </Field>
-            <Field label="Output filename">
-              <input type="text" placeholder="results.xlsx" value={cfg.outputFile || 'results.xlsx'}
-                onChange={e => updateCfg('outputFile', e.target.value)} className="cp-input" />
-            </Field>
-          </>
+          <div className="space-y-3">
+            <div className="bg-green-500/5 border border-green-500/15 rounded-lg p-3 space-y-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-green-600 dark:text-green-400 flex items-center gap-1.5">
+                <FileSpreadsheet size={11} /> Multi-Column Update
+              </p>
+              
+              <Field label="Column Mapping" hint="Format: Excel_Column_Name = {{variable_name}} or Text">
+                {availableColumns.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-1.5">
+                    {availableColumns.map(col => (
+                      <button key={col} onClick={() => updateCfg('extractFields', (cfg.extractFields || '') + col + ' = \n')}
+                        className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 hover:bg-green-500/20 border border-green-500/20 transition-colors">
+                        {col}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <textarea 
+                  value={cfg.extractFields || ''} 
+                  onChange={e => updateCfg('extractFields', e.target.value)}
+                  placeholder={"Proposal No = {{proposal_id}}\nPremium = {{final_premium}}\nRemarks = Success"}
+                  className="cp-textarea min-h-[140px] font-mono text-[11px]" 
+                />
+              </Field>
+
+              <div className="bg-green-500/8 rounded-md p-2 text-[10px] text-green-700 dark:text-green-300 leading-relaxed">
+                <b>Tip:</b> First use the <b>Save to Variable</b> block to capture data from the page, then use this block to map those variables to Excel columns.
+              </div>
+            </div>
+          </div>
         )}
 
         {/* ═══════════════════════════════════════════
@@ -1887,7 +2048,7 @@ const TOOL_SECTIONS: Array<{ title: string; tools: ToolDef[] }> = [
   ]},
   { title: 'Data & Memory', tools: [
     { icon: FileSpreadsheet, label: 'Loop Excel / CSV', nodeType: 'loop_excel',    sub: 'Per-row iteration',  iName: 'FileSpreadsheet',  category: 'data'     },
-    { icon: Download,        label: 'Extract & Save',   nodeType: 'extract',       sub: 'Scrape to file',     iName: 'Download',         category: 'data'     },
+    { icon: FileSpreadsheet, label: 'Update Excel Row', nodeType: 'extract', sub: 'Save multiple columns', iName: 'FileSpreadsheet', category: 'data', badge: 'NEW', badgeColor: 'bg-green-500/10 text-green-600 dark:text-green-400' },
     { icon: Database,        label: 'Save to Variable', nodeType: 'save_variable', sub: 'Read & store value', iName: 'Database',         category: 'memory',  badge: 'NEW', badgeColor: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' },
     { icon: Calculator,      label: 'Calculate / Modify', nodeType: 'calculate',   sub: 'Date, number, text', iName: 'Calculator',       category: 'memory',  badge: 'NEW', badgeColor: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' },
   ]},
@@ -1898,10 +2059,11 @@ const TOOL_SECTIONS: Array<{ title: string; tools: ToolDef[] }> = [
     { icon: CheckSquare,     label: 'Toggle Checkbox',  nodeType: 'checkbox',      sub: 'Smart state-aware',  iName: 'CheckSquare',      category: 'action'   },
   ]},
   { title: 'Logic & Flow', tools: [
-    { icon: Timer,           label: 'Smart Wait',       nodeType: 'wait',          sub: 'Element or delay',   iName: 'Timer',            category: 'logic'   },
-    { icon: GitBranch,       label: 'If / Else Branch', nodeType: 'if_else',       sub: 'Data-driven logic',  iName: 'GitBranch',        category: 'logic',   badge: '↑', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
-    { icon: RefreshCw,       label: 'Loop N Times',     nodeType: 'loop',          sub: 'Repeat steps',       iName: 'RefreshCw',        category: 'logic'   },
-    { icon: Shield,          label: 'Try-Catch',        nodeType: 'try_catch',     sub: 'Fallback on error',  iName: 'Shield',           category: 'logic',   badge: 'NEW', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+    { icon: Timer,           label: 'Smart Wait',       nodeType: 'wait',          sub: 'Element or delay',   iName: 'Timer',             category: 'logic'   },
+    { icon: GitBranch,       label: 'If / Else Branch', nodeType: 'if_else',       sub: 'Data-driven logic',  iName: 'GitBranch',         category: 'logic',   badge: '↑', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+    // 👇 पुरानी 'loop' वाली लाइन की जगह ये नई लाइन डाल दें 👇
+    { icon: RefreshCw,       label: 'Smart Retry Loop', nodeType: 'condition_loop',sub: 'Do-While Auto Loop', iName: 'RefreshCw',         category: 'logic',   badge: 'LOOP', badgeColor: 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400' },
+    { icon: Shield,          label: 'Try-Catch',        nodeType: 'try_catch',     sub: 'Fallback on error',  iName: 'Shield',            category: 'logic',   badge: 'NEW', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
   ]},
   { title: 'Safety & Human', tools: [
     { icon: UserCheck,       label: 'Human-in-Loop',    nodeType: 'human_in_loop', sub: 'Pause & resume',     iName: 'UserCheck',        category: 'safety',  badge: 'NEW', badgeColor: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' },
@@ -2094,6 +2256,7 @@ export function WorkflowEditor({ initialData }: WorkflowEditorProps) {
             initialDesc={workflowDesc}
           />
           <ConfigPanel
+            nodes={nodes}
             selectedNode={selectedNode}
             updateNodeData={updateNodeData}
             availableColumns={availableColumns}
