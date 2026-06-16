@@ -287,6 +287,28 @@ const statusRing = (s?: string) => {
 const AutomationNode = ({ data, selected }: { data: AutomationNodeData; selected: boolean }) => {
   const s   = catStyle(data.category);
   const cfg = data.config || {};
+  if (data.nodeType === 'step_group') {
+    return (
+      <div className={`w-full h-full min-w-[300px] min-h-[200px] bg-blue-500/5 border-2 border-dashed rounded-xl p-3 
+        ${selected ? 'border-blue-500 shadow-md' : 'border-blue-500/30 hover:border-blue-500/60'} transition-all`}
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-7 h-7 rounded-lg bg-blue-500/15 flex items-center justify-center text-blue-600">
+            <Layers size={13} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[12px] font-bold text-blue-700 dark:text-blue-300">{data.label}</div>
+            <div className="text-[10px] text-muted-foreground">Step Group Container</div>
+          </div>
+          <div className={`min-w-[22px] h-[22px] rounded-full px-1.5 flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
+            data.sequence > 0 ? 'bg-blue-600 text-white' : 'bg-muted text-muted-foreground border border-dashed border-blue-500/30'
+          }`}>
+            {data.sequence > 0 ? data.sequence : '?'}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const getPreview = () => {
     switch (data.nodeType) {
@@ -1267,7 +1289,68 @@ const ConfigPanel = ({
             </div>
           </div>
         )}
+{/* ═══════════════════════════════════════════
+            STEP GROUP CONTAINER
+        ═══════════════════════════════════════════ */}
+        {d.nodeType === 'step_group' && (
+          <div className="space-y-4">
+            <div className="bg-blue-500/5 border border-blue-500/15 rounded-lg p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 mb-3 flex items-center gap-1.5">
+                <Layers size={11} /> Step Group Config
+              </p>
+              
+              <div className="bg-blue-500/8 rounded-md p-2 text-[10px] text-blue-700 dark:text-blue-300 mb-4 leading-relaxed">
+                <b>Logic:</b> Only enters the group if <b>Entry Condition</b> is met. Repeats the group steps until <b>Exit Condition</b> is met.
+              </div>
 
+              {/* --- ENTRY CONDITION --- */}
+              <div className="mb-4">
+                <p className="text-[9px] font-bold text-muted-foreground mb-2 border-b border-border/50 pb-1">🚦 ENTRY CONDITION (IF)</p>
+                <Field label="Condition Type">
+                  <select className="cp-select" value={cfg.conditionType || 'element_exists'} onChange={e => updateCfg('conditionType', e.target.value as never)}>
+                    <option value="element_exists">Element exists on page</option>
+                    <option value="element_text_equals">Element text equals</option>
+                    <option value="element_text_contains">Element text contains</option>
+                    <option value="variable_empty">Variable is empty</option>
+                    <option value="variable_equals">Variable equals value</option>
+                  </select>
+                </Field>
+                <div className="mt-2">
+                  <Field label="Left Side (Selector or {{Var}})">
+                    <input type="text" placeholder="#kyc-button" className="cp-input font-mono text-[11px]" 
+                      value={cfg.conditionLeft || ''} onChange={e => updateCfg('conditionLeft', e.target.value)} />
+                  </Field>
+                </div>
+              </div>
+
+              {/* --- EXIT CONDITION --- */}
+              <div className="mb-3">
+                <p className="text-[9px] font-bold text-muted-foreground mb-2 border-b border-border/50 pb-1">🛑 EXIT CONDITION (UNTIL)</p>
+                <Field label="Condition Type">
+                  <select className="cp-select" value={cfg.variableSource || 'element_exists'} onChange={e => updateCfg('variableSource', e.target.value as never)}>
+                    <option value="element_exists">Element exists on page</option>
+                    <option value="element_hidden">Element is hidden/gone</option>
+                    <option value="element_text_contains">Element text contains</option>
+                  </select>
+                </Field>
+                <div className="mt-2">
+                  <Field label="Target Selector">
+                    <input type="text" placeholder=".success-message" className="cp-input font-mono text-[11px]" 
+                      value={cfg.stateSelector || ''} onChange={e => updateCfg('stateSelector', e.target.value)} />
+                  </Field>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-blue-500/15 mt-3">
+                <Field label="Max Group Loops (Safety)">
+                  <input type="number" min={1} max={50} value={cfg.loopCount ?? 3} 
+                    onChange={e => updateCfg('loopCount', Number(e.target.value))} 
+                    className="cp-input text-[11px] font-bold text-foreground" />
+                </Field>
+              </div>
+            </div>
+          </div>
+        )}
         {/* ═══════════════════════════════════════════
             JS INJECTION
         ═══════════════════════════════════════════ */}
@@ -1798,7 +1881,7 @@ const FlowCanvas = ({
 }) => {
   const reactFlowWrapper              = useRef<HTMLDivElement>(null);
   const dropProcessed                 = useRef(false);
-  const { screenToFlowPosition }      = useReactFlow();
+  const { screenToFlowPosition, getNodes } = useReactFlow();
   const router                        = useRouter();
   const [isSaving, setIsSaving]       = useState(false);
   const [saved, setSaved]             = useState(false);
@@ -1858,6 +1941,35 @@ const FlowCanvas = ({
     const bounds   = reactFlowWrapper.current.getBoundingClientRect();
     const position = screenToFlowPosition({ x: e.clientX - bounds.left, y: e.clientY - bounds.top });
 
+    // 👇 2. ये नया पेरेंट डिटेक्शन लॉजिक यहाँ ऐड करें 👇
+    const currentNodes = getNodes();
+    let parentId: string | undefined = undefined;
+    let finalPos = { ...position };
+
+    // अगर ड्रॉप किया गया ब्लॉक खुद कोई ग्रुप नहीं है, तो चेक करो कि क्या वो किसी ग्रुप के अंदर गिरा है?
+    if (rType !== 'step_group') {
+      const parentGroup = currentNodes.find(n => {
+        const nd = n.data as unknown as AutomationNodeData;
+        if (nd.nodeType !== 'step_group') return false;
+        
+        const nx = n.position.x;
+        const ny = n.position.y;
+        const nw = (n.style?.width as number) || 400; // बॉक्स की डिफ़ॉल्ट चौड़ाई
+        const nh = (n.style?.height as number) || 300; // बॉक्स की डिफ़ॉल्ट ऊंचाई
+        
+        // चेक कर रहे हैं कि ड्रॉप पॉइंट बॉक्स के अंदर है या नहीं
+        return position.x >= nx && position.x <= nx + nw && position.y >= ny && position.y <= ny + nh;
+      });
+
+      if (parentGroup) {
+        parentId = parentGroup.id;
+        finalPos = { 
+          x: position.x - parentGroup.position.x, 
+          y: position.y - parentGroup.position.y 
+        };
+      }
+    }
+
     const defaultTechnique =
       rType === 'click'    ? 'standard_click' :
       rType === 'select'   ? 'native_select'  :
@@ -1866,7 +1978,10 @@ const FlowCanvas = ({
     const newNode: Node = {
       id: getId(),
       type: 'automation',
-      position,
+      position: finalPos,        // <-- इसे finalPos कर दें
+      parentId: parentId,        // <-- NEW
+      extent: parentId ? 'parent' : undefined, // <-- NEW (बॉक्स के बाहर नहीं जाने देगा)
+      style: rType === 'step_group' ? { width: 400, height: 300, zIndex: -1 } : undefined, // <-- NEW (ग्रुप को बड़ा और पीछे रखेगा)
       data: {
         nodeType: rType, label: rLabel, subline: rSubline, iName: rIName, category: rCat,
         sequence: 0,
