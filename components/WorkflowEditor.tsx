@@ -2004,7 +2004,7 @@
         position: finalPos,        // <-- इसे finalPos कर दें
         parentId: parentId,        // <-- NEW
         extent: parentId ? 'parent' : undefined, // <-- NEW (बॉक्स के बाहर नहीं जाने देगा)
-        style: rType === 'step_group' ? { width: 400, height: 300, zIndex: -1 } : undefined, // <-- NEW (ग्रुप को बड़ा और पीछे रखेगा)
+        style: rType === 'step_group' ? { width: 400, height: 300, zIndex: 0 } : { zIndex: 10 },
         data: {
           nodeType: rType, label: rLabel, subline: rSubline, iName: rIName, category: rCat,
           sequence: 0,
