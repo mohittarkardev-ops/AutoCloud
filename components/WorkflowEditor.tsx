@@ -14,14 +14,16 @@
   } from '@xyflow/react';
   import '@xyflow/react/dist/style.css';
   import * as XLSX from 'xlsx';
-  import {
-    Play, MousePointerClick, Globe, Keyboard, Timer, Save, Settings2,
-    Code, CheckSquare, ListFilter, FileSpreadsheet, CheckCircle2,
-    Loader2, ShieldCheck, FileSearch, AlertCircle,
-    GitBranch, RefreshCw, Download, Eye, ChevronDown,
-    Layers, Monitor, Info, Database, Calculator, UserCheck,
-    Shield, Shuffle, AlertTriangle, Variable, SplitSquareHorizontal,
-  } from 'lucide-react';
+  // FIND THIS IMPORT BLOCK:
+import {
+  Play, MousePointerClick, Globe, Keyboard, Timer, Save, Settings2,
+  Code, CheckSquare, ListFilter, FileSpreadsheet, CheckCircle2,
+  Loader2, ShieldCheck, FileSearch, AlertCircle,
+  GitBranch, RefreshCw, Download, Eye, ChevronDown,
+  Layers, Monitor, Info, Database, Calculator, UserCheck,
+  Shield, Shuffle, AlertTriangle, Variable, SplitSquareHorizontal,
+  Upload, FileText, // 👈 ADD THESE TWO
+} from 'lucide-react';
   import { useRouter, useSearchParams } from 'next/navigation';
   import { saveWorkflow } from '@/app/actions/workflows';
 
@@ -51,6 +53,12 @@
     notes?: string;
     action?: string;
     waitAfterMs?: number;
+
+    // ── NEW: File Upload & Rename ──
+    uploadFileRef?: string;       // Stable file ID or storage key
+    uploadFileName?: string;      // Original display name (e.g. form_60.pdf)
+    renameTemplate?: string;      // Filename template e.g. {{customer_name}}_{{mobile_number}}.pdf
+    downloadPattern?: string;     // Optional expected file prefix/extension
 
     // ── NEW: Save to Variable ──
     variableName?: string;
@@ -254,6 +262,8 @@
       case 'AlertTriangle':      return <AlertTriangle {...p} />;
       case 'Variable':           return <Variable {...p} />;
       case 'SplitSquareHorizontal': return <SplitSquareHorizontal {...p} />;
+      case 'Upload':             return <Upload {...p} />;
+      case 'FileText':           return <FileText {...p} />;
       default:                   return <Play {...p} />;
     }
   };
@@ -346,6 +356,10 @@
           return cfg.pinPrimaryColumn ? `PIN: {{${cfg.pinPrimaryColumn}}} / {{${cfg.pinSecondaryColumn || '—'}}}` : 'Not configured';
         case 'logout_detect':
           return cfg.logoutDetectSelector || 'No selector set';
+        case 'upload_file':
+          return cfg.uploadFileName ? `File: ${cfg.uploadFileName} → ${cfg.selector || 'No selector'}` : 'No file selected';
+        case 'rename_pdf':
+          return cfg.renameTemplate ? `Rename → ${cfg.renameTemplate}` : 'No template configured';
 
         default: return data.label;
       }
@@ -649,6 +663,29 @@
         };
       }
 
+      // 👇 ADD THESE TWO CONDITIONS
+      if (d.nodeType === 'upload_file') {
+        extractTokens(c.selector || '');
+        extractTokens(c.uploadFileRef || ''); 
+        return {
+          ...base,
+          type: 'upload_file',
+          selector: c.selector || '',
+          file_url: c.uploadFileRef || '',
+          technique: c.technique || 'send_keys',
+        };
+      }
+
+      if (d.nodeType === 'rename_pdf') {
+        extractTokens(c.renameTemplate || '');
+        return {
+          ...base,
+          type: 'rename_download',
+          template: c.renameTemplate || '',
+          expected_pattern: c.downloadPattern || '*.pdf',
+        };
+      }
+
       return base;
     });
 
@@ -886,7 +923,7 @@
           {/* ═══════════════════════════════════════════
               SELECTOR — shared for click / type / select
           ═══════════════════════════════════════════ */}
-          {['type_text', 'click', 'select'].includes(d.nodeType) && (
+          {['type_text', 'click', 'select', 'upload_file'].includes(d.nodeType) && (
             <>
               <Field label="Target Selector" hint="CSS selector or XPath">
                 <input type="text" placeholder="e.g. #txtreg or //input[@id='carreg']"
@@ -1825,6 +1862,90 @@
             </div>
           )}
 
+          {/* ═══════════════════════════════════════════
+              ★ NEW: UPLOAD FILE (URL BASED)
+          ═══════════════════════════════════════════ */}
+          {d.nodeType === 'upload_file' && (
+            <div className="space-y-3">
+              <div className="bg-blue-500/5 border border-blue-500/15 rounded-lg p-3 space-y-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                  <Upload size={11} /> File Attachment URL
+                </p>
+
+                <Field label="Direct File URL" hint="Paste public link or use {{Excel_Column}}">
+                  {availableColumns.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-1.5">
+                      {availableColumns.map(col => (
+                        <button
+                          key={col}
+                          type="button"
+                          onClick={() => updateCfg('uploadFileRef', (cfg.uploadFileRef || '') + `{{${col}}}`)}
+                          className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 border border-blue-500/20 transition-colors"
+                        >
+                          {`{{${col}}}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <input
+                    type="text"
+                    placeholder="https://... or {{Doc_Link}}"
+                    value={cfg.uploadFileRef || ''}
+                    onChange={e => updateCfg('uploadFileRef', e.target.value)}
+                    className="cp-input font-mono text-[11px]"
+                  />
+                </Field>
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════
+              ★ NEW: RENAME DOWNLOADED PDF
+          ═══════════════════════════════════════════ */}
+          {d.nodeType === 'rename_pdf' && (
+            <div className="space-y-3">
+              <div className="bg-teal-500/5 border border-teal-500/15 rounded-lg p-3 space-y-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400 flex items-center gap-1.5">
+                  <FileText size={11} /> Rename Downloaded PDF
+                </p>
+
+                <Field label="Filename Template" hint="Click chips to insert Excel columns">
+                  {availableColumns.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-1.5">
+                      {availableColumns.map(col => (
+                        <button
+                          key={col}
+                          type="button"
+                          onClick={() => updateCfg('renameTemplate', (cfg.renameTemplate || '') + `{{${col}}}`)}
+                          className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 hover:bg-teal-500/20 border border-teal-500/20 transition-colors"
+                        >
+                          {`{{${col}}}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <input
+                    type="text"
+                    placeholder="e.g. {{Customer_Name}}_{{Mobile}}.pdf"
+                    value={cfg.renameTemplate || ''}
+                    onChange={e => updateCfg('renameTemplate', e.target.value)}
+                    className="cp-input font-mono text-[11px]"
+                  />
+                </Field>
+
+                <Field label="Expected File Filter (optional)" hint="Default matches any downloaded .pdf">
+                  <input
+                    type="text"
+                    placeholder="*.pdf or Form60_*.pdf"
+                    value={cfg.downloadPattern || ''}
+                    onChange={e => updateCfg('downloadPattern', e.target.value)}
+                    className="cp-input font-mono text-[11px]"
+                  />
+                </Field>
+              </div>
+            </div>
+          )}
+
           {/* Notes */}
           <div className="border-t border-border/50 pt-3">
             <Field label="Notes (optional)">
@@ -2189,12 +2310,14 @@
       { icon: FileSpreadsheet, label: 'Update Excel Row', nodeType: 'extract', sub: 'Save multiple columns', iName: 'FileSpreadsheet', category: 'data', badge: 'NEW', badgeColor: 'bg-green-500/10 text-green-600 dark:text-green-400' },
       { icon: Database,        label: 'Save to Variable', nodeType: 'save_variable', sub: 'Read & store value', iName: 'Database',         category: 'memory',  badge: 'NEW', badgeColor: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' },
       { icon: Calculator,      label: 'Calculate / Modify', nodeType: 'calculate',   sub: 'Date, number, text', iName: 'Calculator',       category: 'memory',  badge: 'NEW', badgeColor: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' },
+      { icon: FileText,        label: 'Rename Download PDF', nodeType: 'rename_pdf', sub: 'Template from Excel', iName: 'FileText',       category: 'data', badge: 'NEW', badgeColor: 'bg-teal-500/10 text-teal-600 dark:text-teal-400' },
     ]},
     { title: 'Interactions', tools: [
       { icon: Keyboard,        label: 'Type Text / Date', nodeType: 'type_text',     sub: 'Fill text field',    iName: 'Keyboard',         category: 'action'   },
       { icon: MousePointerClick, label: 'Click Element',  nodeType: 'click',         sub: 'Button / link / JS', iName: 'MousePointerClick', category: 'action'  },
       { icon: ListFilter,      label: 'Select Dropdown',  nodeType: 'select',        sub: 'Native or Material', iName: 'ListFilter',       category: 'action'   },
       { icon: CheckSquare,     label: 'Toggle Checkbox',  nodeType: 'checkbox',      sub: 'Smart state-aware',  iName: 'CheckSquare',      category: 'action'   },
+      { icon: Upload,          label: 'Upload File',      nodeType: 'upload_file',   sub: 'Target file input',  iName: 'Upload',           category: 'action', badge: 'NEW', badgeColor: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' },
     ]},
     { title: 'Logic & Flow', tools: [
       { icon: Timer,           label: 'Smart Wait',       nodeType: 'wait',          sub: 'Element or delay',   iName: 'Timer',             category: 'logic'   },
