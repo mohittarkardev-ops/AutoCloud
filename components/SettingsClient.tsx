@@ -57,7 +57,7 @@ export function SettingsClient({ initialEmail = "" }: { initialEmail?: string })
       if (res.success) {
         setGeneralMsg({ type: "success", text: res.message });
       } else {
-        setGeneralMsg({ type: "error", text: res.error || "Failed to save preferences." });
+        setGeneralMsg({ type: "error", text: res.message || "Failed to save preferences." });
       }
     });
   };
