@@ -2504,7 +2504,7 @@ import {
           .cp-textarea:focus { border-color:hsl(var(--primary)); }
         `}</style>
 
-        <div className="w-full h-[740px] border border-border rounded-xl overflow-hidden bg-background flex shadow-xl relative">
+        <div className="w-full h-full border border-border rounded-xl overflow-hidden bg-background flex shadow-xl relative">
           {isLoading && (
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm rounded-xl">
               <div className="flex flex-col items-center gap-3">
