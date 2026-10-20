@@ -870,8 +870,11 @@ import {
                 <Field label="On Error">
                   <select className="cp-select" value={cfg.onError || 'stop'} onChange={e => updateCfg('onError', e.target.value as never)}>
                     <option value="stop">Stop workflow</option>
-                    <option value="continue">Skip &amp; continue</option>
+                    <option value="continue">Skip & continue</option>
                     <option value="retry">Retry then stop</option>
+                    {/* 👇 NEW OPTIONS */}
+                    <option value="refresh_stop">Refresh then stop</option>
+                    <option value="refresh_continue">Refresh then skip</option>
                   </select>
                 </Field>
                 <Field label="Retries">
@@ -2339,6 +2342,7 @@ import {
       { icon: Layers,          label: 'Iframe Switch',    nodeType: 'switch_iframe', sub: 'Enter/Exit Iframes', iName: 'Layers',           category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
       { icon: Monitor,         label: 'Tab Manager',      nodeType: 'switch_tab',    sub: 'Switch/Close Tabs',  iName: 'Monitor',          category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
       { icon: Keyboard,        label: 'Press Key',        nodeType: 'press_key',     sub: 'ENTER, TAB, etc.',   iName: 'Keyboard',         category: 'advanced', badge: 'ADV', badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+      { icon: RefreshCw,       label: 'Refresh Page',     nodeType: 'refresh_page',  sub: 'Hard reload browser',iName: 'RefreshCw',        category: 'advanced', badge: 'NEW', badgeColor: 'bg-sky-500/10 text-sky-600 dark:text-sky-400' },
     ]},
   ];
 

@@ -1,20 +1,23 @@
+// web-dashboard/components/NodesTableClient.tsx
 'use client'
 
 import { useState, useTransition, useEffect } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Card } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { 
   MonitorSmartphone, Ban, Layers, Wifi, WifiOff, 
-  Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X, Trash2, Loader2,
-  ChevronLeft, ChevronRight // 👈 NAYA IMPORT for Pagination
+  Search, ArrowUpDown, ArrowUp, ArrowDown, X, Trash2, Loader2,
+  ChevronLeft, ChevronRight, Activity, CheckCircle2, AlertCircle, Users
 } from "lucide-react"
 import Link from "next/link"
 import { NodeActionButtons } from "@/components/NodeActionButtons"
 import { NodeConfigDialog } from "@/components/NodeConfigDialog"
 import { DeleteNodeButton } from "@/components/DeleteNodeButton" 
-import { removeDeviceFromGroup, deleteGroup } from "@/app/actions/groups"
+import { removeDeviceFromGroup, updateGroupDevices } from "@/app/actions/groups"
+import { updateNodeStatus, deleteNode } from "@/app/actions/nodes"
 
 type SortKey = 'identity' | 'mac' | 'status' | 'ports' | 'groups' | 'assignment' | 'sync';
 type SortDirection = 'asc' | 'desc';
@@ -30,36 +33,17 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
   const [groupFilter, setGroupFilter] = useState("ALL") 
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection } | null>(null);
   
-  // 🔴 NAYA: Pagination State
+  // Pagination & Selection State
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 50; // Ek baar me 50 PCs dikhenge
+  const itemsPerPage = 50; 
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   
   const [isPending, startTransition] = useTransition();
 
-  // Reset page to 1 when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, statusFilter, groupFilter]);
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, statusFilter, groupFilter]);
 
   const getDeviceGroupsList = (hardwareId: string) => {
     return deviceGroups.filter(g => g.deviceIds?.includes(hardwareId) || g._id === initialDevices.find(d => d.hardwareId === hardwareId)?.groupId);
-  };
-
-  const handleRemoveFromGroup = (hardwareId: string) => {
-    if (confirm("Are you sure you want to remove this PC from its group?")) {
-      startTransition(async () => {
-        await removeDeviceFromGroup(hardwareId);
-      });
-    }
-  };
-
-  const handleDeleteGroup = (groupId: string) => {
-    if (confirm("Are you sure you want to delete this group? All PCs inside will become unassigned.")) {
-      startTransition(async () => {
-        await deleteGroup(groupId);
-        setGroupFilter("ALL"); 
-      });
-    }
   };
 
   // 1. FILTERING
@@ -101,12 +85,59 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
     return 0;
   });
 
-  // 🔴 NAYA: Pagination Logic (Slice the array)
   const totalPages = Math.ceil(sortedDevices.length / itemsPerPage);
-  const paginatedDevices = sortedDevices.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const paginatedDevices = sortedDevices.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  // 3. HEALTH METRICS CALCULATION
+  const now = new Date().getTime();
+  const liveCount = initialDevices.filter(d => (now - new Date(d.lastSeen).getTime()) < 90000).length;
+  const pendingCount = initialDevices.filter(d => d.status === 'pending').length;
+  const blockedCount = initialDevices.filter(d => d.status === 'blocked').length;
+
+  // 4. BULK ACTIONS & SELECTION
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) setSelectedIds(paginatedDevices.map(d => d.hardwareId));
+    else setSelectedIds([]);
+  };
+
+  const handleSelectOne = (checked: boolean, id: string) => {
+    if (checked) setSelectedIds(prev => [...prev, id]);
+    else setSelectedIds(prev => prev.filter(item => item !== id));
+  };
+
+  const handleBulkAction = (action: 'approve' | 'block' | 'delete') => {
+    if (!confirm(`Are you sure you want to ${action} ${selectedIds.length} selected PCs?`)) return;
+    
+    startTransition(async () => {
+      const promises = selectedIds.map(id => {
+        if (action === 'delete') return deleteNode(id);
+        return updateNodeStatus(id, action === 'approve' ? 'approved' : 'blocked');
+      });
+      await Promise.all(promises);
+      setSelectedIds([]); // Clear selection after action
+    });
+  };
+
+  const handleBulkGroupAssign = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const targetGroupId = e.target.value;
+    if (!targetGroupId) return;
+
+    const targetGroup = deviceGroups.find(g => g._id === targetGroupId);
+    if (!targetGroup) return;
+
+    if (!confirm(`Assign ${selectedIds.length} PCs to "${targetGroup.name}"?`)) {
+      e.target.value = ""; // reset select
+      return;
+    }
+
+    startTransition(async () => {
+      // Pass the selected IDs to the backend group updater.
+      // We pass the IDs of the currently selected PCs to replace or append to the group.
+      await updateGroupDevices(targetGroup._id, targetGroup.name, selectedIds);
+      setSelectedIds([]);
+      e.target.value = "";
+    });
+  };
 
   const handleSort = (key: SortKey) => {
     let direction: SortDirection = 'asc';
@@ -128,57 +159,81 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
     </TableHead>
   );
 
-  return (
-    <div className="space-y-4">
-      {/* 🎛️ CONTROL BAR */}
-      <div className="flex flex-col lg:flex-row gap-3 items-center justify-between bg-card/60 p-3 rounded-xl border border-border/50 shadow-sm">
-        <div className="relative w-full lg:max-w-md">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input 
-            type="text" 
-            placeholder="Search by Identity or MAC ID..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary transition-colors shadow-sm"
-          />
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Filter size={16} className="text-muted-foreground hidden sm:block" />
-            <select 
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full sm:w-auto px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary cursor-pointer shadow-sm"
-            >
-              <option value="ALL">All Status</option>
-              <option value="APPROVED">Approved (Active)</option>
-              <option value="PENDING">Pending (Awaiting)</option>
-              <option value="BLOCKED">Blocked</option>
-            </select>
-          </div>
+  // 5. FLOATING BAR STATE CALCULATIONS
+  const selectedDevices = initialDevices.filter(d => selectedIds.includes(d.hardwareId));
+  const canApprove = selectedDevices.some(d => d.status !== 'approved');
+  const canBlock = selectedDevices.some(d => d.status !== 'blocked');
 
+  return (
+    <div className="space-y-6 relative pb-20">
+      
+      {/* 🚀 UPGRADE 1: HEALTH CARDS */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="bg-card/50 shadow-sm border-border/50">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 bg-blue-500/10 text-blue-500 rounded-lg"><MonitorSmartphone size={20} /></div>
+            <div><p className="text-2xl font-bold">{initialDevices.length}</p><p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Total Nodes</p></div>
+          </CardContent>
+        </Card>
+        <Card className="bg-card/50 shadow-sm border-border/50">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 bg-emerald-500/10 text-emerald-500 rounded-lg"><Activity size={20} /></div>
+            <div><p className="text-2xl font-bold">{liveCount}</p><p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Live Now</p></div>
+          </CardContent>
+        </Card>
+        <Card className="bg-card/50 shadow-sm border-border/50">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 bg-amber-500/10 text-amber-500 rounded-lg"><AlertCircle size={20} /></div>
+            <div><p className="text-2xl font-bold">{pendingCount}</p><p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Pending Approval</p></div>
+          </CardContent>
+        </Card>
+        <Card className="bg-card/50 shadow-sm border-border/50">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 bg-red-500/10 text-red-500 rounded-lg"><Ban size={20} /></div>
+            <div><p className="text-2xl font-bold">{blockedCount}</p><p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Blocked</p></div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* 🎛️ UPGRADE 2: TOGGLE TABS & CONTROLS */}
+      <div className="flex flex-col xl:flex-row gap-4 items-center justify-between bg-card/60 p-3 rounded-xl border border-border/50 shadow-sm">
+        
+        {/* Status Toggle Tabs */}
+        <div className="flex bg-muted/50 p-1 rounded-lg w-full xl:w-auto">
+          {['ALL', 'APPROVED', 'PENDING', 'BLOCKED'].map(status => (
+            <button
+              key={status}
+              onClick={() => setStatusFilter(status)}
+              className={`flex-1 xl:flex-none px-4 py-1.5 text-xs font-semibold rounded-md transition-all ${statusFilter === status ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              {status === 'ALL' ? 'All' : status.charAt(0) + status.slice(1).toLowerCase()}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3 w-full xl:w-auto">
+          <div className="relative w-full sm:w-64">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input 
+              type="text" 
+              placeholder="Search identity or MAC..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-4 py-1.5 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary transition-colors shadow-sm"
+            />
+          </div>
+          
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Layers size={16} className="text-muted-foreground hidden sm:block" />
+            <Layers size={14} className="text-muted-foreground hidden sm:block" />
             <select 
               value={groupFilter}
               onChange={(e) => setGroupFilter(e.target.value)}
-              className="w-full sm:w-auto px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary cursor-pointer shadow-sm"
+              className="w-full sm:w-auto px-3 py-1.5 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary cursor-pointer shadow-sm"
             >
               <option value="ALL">All Groups</option>
               <option value="UNASSIGNED">Unassigned PCs</option>
               {deviceGroups.map(g => <option key={g._id} value={g._id}>{g.name}</option>)}
             </select>
-
-            {groupFilter !== "ALL" && groupFilter !== "UNASSIGNED" && (
-              <Button 
-                variant="destructive" size="sm" className="h-9 px-3 gap-1.5 shadow-sm"
-                onClick={() => handleDeleteGroup(groupFilter)} disabled={isPending}
-              >
-                {isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                <span className="hidden sm:inline">Delete</span>
-              </Button>
-            )}
           </div>
         </div>
       </div>
@@ -189,6 +244,12 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
           <Table>
             <TableHeader className="bg-muted/30 hover:bg-muted/30">
               <TableRow className="border-b border-border/50">
+                <TableHead className="w-12 pl-4">
+                  <Checkbox 
+                    checked={paginatedDevices.length > 0 && selectedIds.length === paginatedDevices.length}
+                    onCheckedChange={handleSelectAll}
+                  />
+                </TableHead>
                 <SortableHeader label="Identity" sortKey="identity" />
                 <SortableHeader label="MAC ID" sortKey="mac" />
                 <SortableHeader label="Status" sortKey="status" />
@@ -200,9 +261,9 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedDevices.length === 0 ? ( // 👈 NAYA: map on paginatedDevices
+              {paginatedDevices.length === 0 ? ( 
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-24 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-24 text-muted-foreground">
                     <div className="flex flex-col items-center gap-3">
                       <div className="p-4 bg-muted/30 rounded-full">
                         <MonitorSmartphone size={40} className="opacity-20" />
@@ -213,14 +274,20 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
                   </TableCell>
                 </TableRow>
               ) : (
-                paginatedDevices.map((device) => { // 👈 NAYA: map on paginatedDevices
+                paginatedDevices.map((device) => { 
                   const lastSeenDate = new Date(device.lastSeen).getTime();
-                  const now = new Date().getTime();
                   const isOnline = (now - lastSeenDate) < 90000; 
                   const deviceGroupsArray = getDeviceGroupsList(device.hardwareId);
+                  const isSelected = selectedIds.includes(device.hardwareId);
 
                   return (
-                    <TableRow key={device._id} className={`hover:bg-muted/10 transition-colors border-b border-border/40 ${isPending ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <TableRow key={device._id} className={`${isSelected ? 'bg-primary/5' : 'hover:bg-muted/10'} transition-colors border-b border-border/40 ${isPending ? 'opacity-50 pointer-events-none' : ''}`}>
+                      <TableCell className="pl-4">
+                        <Checkbox 
+                          checked={isSelected}
+                          onCheckedChange={(c) => handleSelectOne(c as boolean, device.hardwareId)}
+                        />
+                      </TableCell>
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="font-bold text-base">{device.alias || device.hostname}</span>
@@ -253,7 +320,7 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
                               <Badge key={g._id} variant="secondary" className="text-[11px] pr-1 pl-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 flex items-center gap-1.5 shadow-sm">
                                 {g.name}
                                 <div className="cursor-pointer hover:bg-red-100 hover:text-red-600 rounded-full p-0.5 transition-colors"
-                                  onClick={(e) => { e.preventDefault(); handleRemoveFromGroup(device.hardwareId); }} title="Remove from group">
+                                  onClick={(e) => { e.preventDefault(); startTransition(() => { removeDeviceFromGroup(device.hardwareId); }); }} title="Remove from group">
                                   <X size={12} />
                                 </div>
                               </Badge>
@@ -300,34 +367,75 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
           </Table>
         </div>
         
-        {/* 🔴 NAYA: Pagination Controls */}
+        {/* Pagination Controls */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 bg-muted/20 border-t border-border/50">
             <span className="text-xs text-muted-foreground font-medium">
               Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, sortedDevices.length)} of {sortedDevices.length} PCs
             </span>
             <div className="flex items-center gap-2">
-              <Button 
-                variant="outline" size="sm" 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="h-8 px-2"
-              >
-                <ChevronLeft size={16} />
-              </Button>
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="h-8 px-2"><ChevronLeft size={16} /></Button>
               <span className="text-xs font-bold px-2">Page {currentPage} of {totalPages}</span>
-              <Button 
-                variant="outline" size="sm" 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="h-8 px-2"
-              >
-                <ChevronRight size={16} />
-              </Button>
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="h-8 px-2"><ChevronRight size={16} /></Button>
             </div>
           </div>
         )}
       </Card>
+
+      {/* 🚀 UPGRADE 3: FLOATING BULK ACTION BAR (STATE-AWARE) */}
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300">
+          <Card className="bg-zinc-900 text-zinc-50 border-zinc-800 shadow-2xl p-2 rounded-2xl flex items-center gap-4 pl-5">
+            <div className="flex items-center gap-2">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold">
+                {selectedIds.length}
+              </span>
+              <span className="text-sm font-semibold">Selected</span>
+            </div>
+            
+            <div className="h-6 w-px bg-zinc-700 mx-1"></div>
+            
+            <div className="flex items-center gap-2">
+              {/* Group Assignment Dropdown */}
+              <div className="relative flex items-center bg-zinc-800 border border-zinc-700 rounded-lg px-2 h-9 overflow-hidden">
+                <Users size={14} className="text-zinc-400 mr-2" />
+                <select 
+                  className="bg-transparent text-sm text-zinc-100 outline-none w-32 cursor-pointer appearance-none"
+                  onChange={handleBulkGroupAssign}
+                  defaultValue=""
+                  disabled={isPending}
+                >
+                  <option value="" disabled className="text-zinc-900">Assign Group...</option>
+                  {deviceGroups.map(g => (
+                    <option key={g._id} value={g._id} className="text-zinc-900">{g.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {canApprove && (
+                <Button size="sm" variant="ghost" className="hover:bg-zinc-800 text-emerald-400 hover:text-emerald-300" onClick={() => handleBulkAction('approve')} disabled={isPending}>
+                  <CheckCircle2 size={16} className="mr-2" /> Approve All
+                </Button>
+              )}
+              {canBlock && (
+                <Button size="sm" variant="ghost" className="hover:bg-zinc-800 text-amber-400 hover:text-amber-300" onClick={() => handleBulkAction('block')} disabled={isPending}>
+                  <Ban size={16} className="mr-2" /> Block All
+                </Button>
+              )}
+              
+              <div className="h-4 w-px bg-zinc-700 mx-1"></div>
+              
+              <Button size="sm" variant="ghost" className="hover:bg-red-950/50 text-red-400 hover:text-red-300" onClick={() => handleBulkAction('delete')} disabled={isPending}>
+                <Trash2 size={16} className="mr-2" /> Delete All
+              </Button>
+            </div>
+
+            <Button size="icon" variant="ghost" className="rounded-full hover:bg-zinc-800 ml-2" onClick={() => setSelectedIds([])}>
+              <X size={16} className="text-zinc-400" />
+            </Button>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
