@@ -47,19 +47,19 @@ export default async function NodesPage() {
   const approvedNodes = devices.filter(d => d.status === 'approved');
 
   return (
-    <div className="flex min-h-screen bg-[#fafafa] dark:bg-background">
+    <div className="flex min-h-screen bg-background">
       <Sidebar />
 
-      <main className="flex-1 p-8 lg:p-12 max-w-7xl mx-auto w-full">
+      <main className="flex-1 p-6 lg:p-8 max-w-[1600px] mx-auto w-full min-w-0">
         
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-10">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
-            <h2 className="text-4xl font-extrabold tracking-tight mb-2">Hardware Nodes</h2>
-            <p className="text-muted-foreground font-medium">Remote control and real-time monitoring of connected machines.</p>
+            <h2 className="text-4xl font-medium tracking-tight mb-1.5">Hardware Nodes</h2>
+            <p className="text-muted-foreground">Remote control and real-time monitoring of connected machines.</p>
           </div>
           
           <div className="flex items-center gap-3">
-            <div className="bg-muted/40 p-1.5 rounded-2xl border border-border/50">
+            <div className="bg-card p-1 rounded-full">
               <div className="px-4 py-2 flex items-center gap-2">
                  <Cpu size={16} className="text-muted-foreground"/>
                  <span className="text-sm font-bold">{devices.length} Total Nodes</span>

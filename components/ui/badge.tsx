@@ -5,7 +5,7 @@ import { Slot } from "radix-ui"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-  "group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3!",
+  "group/badge inline-flex h-6 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2.5 py-0.5 text-xs font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3!",
   {
     variants: {
       variant: {
@@ -19,6 +19,13 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
+        // Status variants (design.md §2) — additive, existing variants unchanged
+        success:
+          "border-[#CBE8D8] bg-[#E8F5EE] text-[#1F8A5B] dark:border-[#2BA86B]/30 dark:bg-[#2BA86B]/15 dark:text-[#5DBB8E]",
+        warning:
+          "border-[#F6E1B8] bg-[#FDF4E3] text-[#D98A1C] dark:border-[#D98A1C]/30 dark:bg-[#D98A1C]/15 dark:text-[#F0B35A]",
+        danger:
+          "border-[#F6CFCF] bg-[#FDEDED] text-[#E5484D] dark:border-[#E5484D]/30 dark:bg-[#E5484D]/15 dark:text-[#F06A6A]",
       },
     },
     defaultVariants: {

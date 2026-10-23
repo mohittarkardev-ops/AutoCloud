@@ -35,7 +35,7 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
   
   // Pagination & Selection State
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 50; 
+  const itemsPerPage = 12; // compact: whole page fits one screen (raise if you prefer longer pages)
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   
   const [isPending, startTransition] = useTransition();
@@ -147,7 +147,7 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
 
   const SortableHeader = ({ label, sortKey }: { label: string, sortKey: SortKey }) => (
     <TableHead 
-      className="font-bold text-xs uppercase tracking-widest text-muted-foreground cursor-pointer hover:text-foreground hover:bg-muted/40 transition-colors select-none"
+      className="font-medium text-[11px] uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground hover:bg-accent/60 transition-colors select-none"
       onClick={() => handleSort(sortKey)}
     >
       <div className="flex items-center gap-1.5">
@@ -165,46 +165,46 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
   const canBlock = selectedDevices.some(d => d.status !== 'blocked');
 
   return (
-    <div className="space-y-6 relative pb-20">
+    <div className="space-y-4 relative pb-20">
       
       {/* 🚀 UPGRADE 1: HEALTH CARDS */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-card/50 shadow-sm border-border/50">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="p-3 bg-blue-500/10 text-blue-500 rounded-lg"><MonitorSmartphone size={20} /></div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Card className="py-0 border-none">
+          <CardContent className="p-3.5 flex items-center gap-3">
+            <div className="p-2.5 bg-blue-500/10 text-blue-500 rounded-full"><MonitorSmartphone size={20} /></div>
             <div><p className="text-2xl font-bold">{initialDevices.length}</p><p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Total Nodes</p></div>
           </CardContent>
         </Card>
-        <Card className="bg-card/50 shadow-sm border-border/50">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="p-3 bg-emerald-500/10 text-emerald-500 rounded-lg"><Activity size={20} /></div>
+        <Card className="py-0 border-none">
+          <CardContent className="p-3.5 flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-500/10 text-emerald-500 rounded-full"><Activity size={20} /></div>
             <div><p className="text-2xl font-bold">{liveCount}</p><p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Live Now</p></div>
           </CardContent>
         </Card>
-        <Card className="bg-card/50 shadow-sm border-border/50">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="p-3 bg-amber-500/10 text-amber-500 rounded-lg"><AlertCircle size={20} /></div>
+        <Card className="py-0 border-none">
+          <CardContent className="p-3.5 flex items-center gap-3">
+            <div className="p-2.5 bg-amber-500/10 text-amber-500 rounded-full"><AlertCircle size={20} /></div>
             <div><p className="text-2xl font-bold">{pendingCount}</p><p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Pending Approval</p></div>
           </CardContent>
         </Card>
-        <Card className="bg-card/50 shadow-sm border-border/50">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="p-3 bg-red-500/10 text-red-500 rounded-lg"><Ban size={20} /></div>
+        <Card className="py-0 border-none">
+          <CardContent className="p-3.5 flex items-center gap-3">
+            <div className="p-2.5 bg-red-500/10 text-red-500 rounded-full"><Ban size={20} /></div>
             <div><p className="text-2xl font-bold">{blockedCount}</p><p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Blocked</p></div>
           </CardContent>
         </Card>
       </div>
 
       {/* 🎛️ UPGRADE 2: TOGGLE TABS & CONTROLS */}
-      <div className="flex flex-col xl:flex-row gap-4 items-center justify-between bg-card/60 p-3 rounded-xl border border-border/50 shadow-sm">
+      <div className="flex flex-col xl:flex-row gap-3 items-center justify-between bg-card p-2.5 rounded-2xl">
         
         {/* Status Toggle Tabs */}
-        <div className="flex bg-muted/50 p-1 rounded-lg w-full xl:w-auto">
+        <div className="flex bg-muted p-1 rounded-full w-full xl:w-auto">
           {['ALL', 'APPROVED', 'PENDING', 'BLOCKED'].map(status => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
-              className={`flex-1 xl:flex-none px-4 py-1.5 text-xs font-semibold rounded-md transition-all ${statusFilter === status ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`flex-1 xl:flex-none px-4 py-1.5 text-xs font-medium rounded-full transition-all ${statusFilter === status ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
             >
               {status === 'ALL' ? 'All' : status.charAt(0) + status.slice(1).toLowerCase()}
             </button>
@@ -219,7 +219,7 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
               placeholder="Search identity or MAC..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-1.5 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary transition-colors shadow-sm"
+              className="w-full pl-9 pr-4 py-1.5 text-sm bg-muted/60 border border-transparent rounded-full outline-none focus:border-primary transition-colors"
             />
           </div>
           
@@ -228,7 +228,7 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
             <select 
               value={groupFilter}
               onChange={(e) => setGroupFilter(e.target.value)}
-              className="w-full sm:w-auto px-3 py-1.5 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary cursor-pointer shadow-sm"
+              className="w-full sm:w-auto px-3 py-1.5 text-sm bg-muted/60 border border-transparent rounded-full outline-none focus:border-primary cursor-pointer"
             >
               <option value="ALL">All Groups</option>
               <option value="UNASSIGNED">Unassigned PCs</option>
@@ -239,12 +239,12 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
       </div>
 
       {/* 📊 DATA TABLE */}
-      <Card className="border-none shadow-sm bg-card/60 backdrop-blur-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader className="bg-muted/30 hover:bg-muted/30">
-              <TableRow className="border-b border-border/50">
-                <TableHead className="w-12 pl-4">
+      <Card className="py-0 border-none overflow-hidden">
+        <div className="w-full">
+          <Table className="[&_td]:px-2.5 [&_td]:py-2 [&_th]:px-2.5 [&_th]:h-10">
+            <TableHeader className="bg-transparent hover:bg-transparent">
+              <TableRow className="border-b border-border/60">
+                <TableHead className="w-10 pl-4">
                   <Checkbox 
                     checked={paginatedDevices.length > 0 && selectedIds.length === paginatedDevices.length}
                     onCheckedChange={handleSelectAll}
@@ -257,7 +257,7 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
                 <SortableHeader label="Groups" sortKey="groups" />
                 <SortableHeader label="Assignment" sortKey="assignment" />
                 <SortableHeader label="Last Sync" sortKey="sync" />
-                <TableHead className="text-right pr-6 font-bold text-xs uppercase tracking-widest text-muted-foreground">Access Mgt.</TableHead>
+                <TableHead className="text-right pr-3 font-medium text-[11px] uppercase tracking-wider text-muted-foreground">Access Mgt.</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -281,7 +281,7 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
                   const isSelected = selectedIds.includes(device.hardwareId);
 
                   return (
-                    <TableRow key={device._id} className={`${isSelected ? 'bg-primary/5' : 'hover:bg-muted/10'} transition-colors border-b border-border/40 ${isPending ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <TableRow key={device._id} className={`${isSelected ? 'bg-accent' : ''} transition-colors ${isPending ? 'opacity-50 pointer-events-none' : ''}`}>
                       <TableCell className="pl-4">
                         <Checkbox 
                           checked={isSelected}
@@ -290,18 +290,18 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col">
-                          <span className="font-bold text-base">{device.alias || device.hostname}</span>
+                          <span className="font-medium text-sm">{device.alias || device.hostname}</span>
                           <span className="text-[10px] text-muted-foreground font-mono mt-0.5">{device.hostname}</span>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className="font-mono text-[11px] font-semibold text-muted-foreground/80 bg-muted/50 px-2 py-1 rounded-md uppercase">{device.hardwareId}</span>
+                        <span title={device.hardwareId} className="inline-block max-w-[120px] truncate align-middle font-mono text-[11px] font-medium text-muted-foreground bg-muted px-2 py-1 rounded-full uppercase">{device.hardwareId}</span>
                       </TableCell>
                       <TableCell>
                         {device.status === 'blocked' ? (
                           <Badge variant="destructive" className="gap-1 px-2.5 py-0.5 shadow-sm"><Ban size={12} /> Blocked</Badge>
                         ) : isOnline ? (
-                          <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-200 hover:bg-emerald-500/20 gap-1.5 px-2.5 py-0.5 shadow-sm">
+                          <Badge variant="success" className="gap-1.5 px-2.5 py-0.5">
                             <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live
                           </Badge>
                         ) : (
@@ -317,7 +317,7 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
                         {deviceGroupsArray.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
                             {deviceGroupsArray.slice(0, 2).map((g) => (
-                              <Badge key={g._id} variant="secondary" className="text-[11px] pr-1 pl-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 flex items-center gap-1.5 shadow-sm">
+                              <Badge key={g._id} variant="secondary" className="text-[11px] pr-1 pl-2 py-0.5 bg-brand-50 text-brand-700 border-brand-100 hover:bg-brand-100 flex items-center gap-1.5">
                                 {g.name}
                                 <div className="cursor-pointer hover:bg-red-100 hover:text-red-600 rounded-full p-0.5 transition-colors"
                                   onClick={(e) => { e.preventDefault(); startTransition(() => { removeDeviceFromGroup(device.hardwareId); }); }} title="Remove from group">
@@ -344,11 +344,11 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
                           <span className="text-[9px] uppercase tracking-widest text-muted-foreground mt-0.5">Today</span>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right pr-6">
-                        <div className="flex justify-end items-center gap-2">
+                      <TableCell className="text-right pr-3">
+                        <div className="flex justify-end items-center gap-1.5">
                           {device.status === 'approved' && (
                             <Link href={`/nodes/${device.hardwareId}`}>
-                              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-blue-600 border-blue-200 hover:bg-blue-50 text-[11px] font-bold shadow-sm transition-transform hover:-translate-y-0.5">
+                              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-primary text-[11px] font-medium">
                                 <Layers size={13} /> Details
                               </Button>
                             </Link>
@@ -385,7 +385,7 @@ export function NodesTableClient({ initialDevices, deviceGroups = [] }: NodesTab
       {/* 🚀 UPGRADE 3: FLOATING BULK ACTION BAR (STATE-AWARE) */}
       {selectedIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300">
-          <Card className="bg-zinc-900 text-zinc-50 border-zinc-800 shadow-2xl p-2 rounded-2xl flex items-center gap-4 pl-5">
+          <Card className="bg-brand-950 text-white border-brand-700 shadow-2xl p-2 rounded-full flex items-center gap-4 pl-5">
             <div className="flex items-center gap-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold">
                 {selectedIds.length}

@@ -44,7 +44,7 @@ export default async function BuilderPage() {
   const dbWorkflows = await getWorkflows();
 
   return (
-    <div className="flex min-h-screen bg-[#fafafa] dark:bg-background">
+    <div className="flex min-h-screen bg-background">
       
       <Sidebar />
 

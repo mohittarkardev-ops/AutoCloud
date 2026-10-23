@@ -19,7 +19,7 @@ export default async function WorkflowsListPage() {
   const workflows: any[] = await getWorkflows();
 
   return (
-    <div className="flex min-h-screen bg-[#fafafa] dark:bg-background">
+    <div className="flex min-h-screen bg-background">
       
       {/* Shared Global Sidebar */}
       <Sidebar />

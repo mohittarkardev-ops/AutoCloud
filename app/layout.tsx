@@ -1,10 +1,10 @@
 // web-dashboard/app/layout.tsx
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-// Inter font setup
-const inter = Inter({ 
+// Plus Jakarta Sans (design.md typography)
+const inter = Plus_Jakarta_Sans({ 
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
   variable: "--font-inter",
