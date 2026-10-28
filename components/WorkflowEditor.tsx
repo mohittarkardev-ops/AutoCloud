@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
   import { useRouter, useSearchParams } from 'next/navigation';
   import { saveWorkflow } from '@/app/actions/workflows';
+  import { IfElseConfigPanel, type IfElseCfg } from '@/components/IfElseConfigPanel';
 
   // ─────────────────────────────────────────────
   // TYPES
@@ -78,7 +79,7 @@ import {
       | 'variable_empty' | 'variable_equals' | 'variable_contains'
       | 'url_contains' | 'page_has_text';
     conditionLeft?: string;    // {{variable}} or selector
-    conditionOperator?: 'is_empty' | 'is_not_empty' | 'equals' | 'not_equals' | 'contains' | 'not_contains';
+    conditionOperator?: 'is_empty' | 'is_not_empty' | 'equals' | 'not_equals' | 'contains' | 'not_contains' | 'not_exists';
     conditionRight?: string;   // comparison value
     trueBranch?: string;       // label for true path
     falseBranch?: string;      // label for false path
@@ -332,7 +333,13 @@ import {
           return cfg.selector ? `${a} · ${cfg.selector}` : a;
         }
         case 'wait':           return cfg.waitType === 'time' ? `Wait ${cfg.waitTimeout}s` : (cfg.waitTarget || 'No target');
-        case 'if_else':        return `IF ${cfg.conditionLeft || '?'} ${cfg.conditionOperator || ''} ${cfg.conditionRight || ''}`.trim();
+        case 'if_else': {
+          const ct = cfg.conditionType || 'element_exists';
+          if (ct === 'element_exists') return `IF ${cfg.conditionLeft || '?'} ${cfg.conditionOperator === 'not_exists' ? 'is NOT on page' : 'is on page'}`;
+          if (ct === 'page_has_text') return `IF page has "${cfg.conditionRight || '?'}"`;
+          if (ct === 'url_contains')  return `IF URL has "${cfg.conditionRight || '?'}"`;
+          return `IF ${cfg.conditionLeft || '?'} ${cfg.conditionOperator || ''} ${cfg.conditionRight || ''}`.trim();
+        }
         case 'condition_loop': return `Loop max ${cfg.loopCount ?? 3}× until condition met`;
         case 'step_group':     return `Group: IF Entry met -> RUN -> UNTIL Exit met`;
         case 'js_inject':      return cfg.jsCode ? cfg.jsCode.substring(0, 30) + '…' : 'No code';
@@ -744,6 +751,9 @@ import {
     const updateCfg   = (key: keyof NodeConfig, value: unknown) =>
       updateNodeData(selectedNode.id, { config: { ...cfg, [key]: value } });
     const updateLabel = (label: string) => updateNodeData(selectedNode.id, { label });
+    // Several keys at once (e.g. condition type + operator) - one atomic update, never half-applied
+    const patchCfg = (patch: Record<string, unknown>) =>
+      updateNodeData(selectedNode.id, { config: { ...cfg, ...patch } as never });
 
     const handleLocalFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -1164,106 +1174,21 @@ import {
               IF / ELSE — DATA-DRIVEN
           ═══════════════════════════════════════════ */}
           {d.nodeType === 'if_else' && (
-            <div className="space-y-3">
-              <div className="bg-purple-500/5 border border-purple-500/15 rounded-lg p-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 mb-3 flex items-center gap-1.5">
-                  <GitBranch size={11} /> Condition Builder
-                </p>
-
-                <Field label="Condition Type">
-                  <select className="cp-select" value={cfg.conditionType || 'element_exists'}
-                    onChange={e => updateCfg('conditionType', e.target.value as never)}>
-                    <optgroup label="Element-based">
-                      <option value="element_exists">Element exists on page</option>
-                      <option value="element_text_equals">Element text equals</option>
-                      <option value="element_text_contains">Element text contains</option>
-                    </optgroup>
-                    <optgroup label="Variable / Runtime">
-                      <option value="variable_empty">Variable is empty</option>
-                      <option value="variable_equals">Variable equals value</option>
-                      <option value="variable_contains">Variable contains text</option>
-                    </optgroup>
-                    <optgroup label="Page-level">
-                      <option value="url_contains">URL contains text</option>
-                      <option value="page_has_text">Page has text</option>
-                    </optgroup>
-                  </select>
-                </Field>
-
-                <Field label="Left side (selector or {{variable}})" hint="e.g. #previnstp or {{tp_insurer}}">
-                  <input type="text" placeholder="#selector or {{variable_name}}"
-                    value={cfg.conditionLeft || ''} onChange={e => updateCfg('conditionLeft', e.target.value)}
-                    className="cp-input font-mono text-[11px]" />
-                </Field>
-
-                <Field label="Operator">
-                  <select className="cp-select" value={cfg.conditionOperator || 'is_empty'}
-                    onChange={e => updateCfg('conditionOperator', e.target.value as never)}>
-                    <option value="is_empty">is empty</option>
-                    <option value="is_not_empty">is NOT empty</option>
-                    <option value="equals">equals (exact)</option>
-                    <option value="not_equals">does NOT equal</option>
-                    <option value="contains">contains</option>
-                    <option value="not_contains">does NOT contain</option>
-                  </select>
-                </Field>
-
-                {!['is_empty', 'is_not_empty'].includes(cfg.conditionOperator || 'is_empty') && (
-                  <Field label="Right side (comparison value)">
-                    <input type="text" placeholder="text or {{variable}}"
-                      value={cfg.conditionRight || ''} onChange={e => updateCfg('conditionRight', e.target.value)}
-                      className="cp-input font-mono text-[11px]" />
-                  </Field>
-                )}
-              </div>
-
-              {/* 🟢 5. इसे ढूँढकर पूरा रिप्लेस करें */}
-              {/* 🔴 UPGRADED: IF/ELSE Jump Logic (Smart Dropdown) */}
-              <div className="space-y-3 pt-2">
-                <Field label="✅ If TRUE → Jump to Step">
-                  <select 
-                    className="cp-select text-[11px] font-bold text-green-600"
-                    value={cfg.trueBranch || ''} 
-                    onChange={e => updateCfg('trueBranch', e.target.value)}
-                  >
-                    <option value="" className="text-muted-foreground">Select target step...</option>
-                    {nodes
-                      .filter(n => (n.data as unknown as AutomationNodeData).sequence > 0)
-                      .sort((a, b) => (a.data as unknown as AutomationNodeData).sequence - (b.data as unknown as AutomationNodeData).sequence)
-                      .map(n => {
-                        const nd = n.data as unknown as AutomationNodeData;
-                        return (
-                          <option key={n.id} value={n.id} className="text-foreground">
-                            Step {nd.sequence}: {nd.label}
-                          </option>
-                        );
-                      })}
-                  </select>
-                </Field>
-                
-                <Field label="❌ If FALSE → Jump to Step">
-                  <select 
-                    className="cp-select text-[11px] font-bold text-red-600"
-                    value={cfg.falseBranch || ''} 
-                    onChange={e => updateCfg('falseBranch', e.target.value)}
-                  >
-                    <option value="" className="text-muted-foreground">Select target step...</option>
-                    {nodes
-                      .filter(n => (n.data as unknown as AutomationNodeData).sequence > 0)
-                      .sort((a, b) => (a.data as unknown as AutomationNodeData).sequence - (b.data as unknown as AutomationNodeData).sequence)
-                      .map(n => {
-                        const nd = n.data as unknown as AutomationNodeData;
-                        return (
-                          <option key={n.id} value={n.id} className="text-foreground">
-                            Step {nd.sequence}: {nd.label}
-                          </option>
-                        );
-                      })}
-                  </select>
-                </Field>
-              </div>
-            </div>
+            <IfElseConfigPanel
+              cfg={cfg as IfElseCfg}
+              patch={patchCfg}
+              currentSequence={d.sequence}
+              targets={nodes
+                .filter(n => (n.data as unknown as AutomationNodeData).sequence > 0)
+                .sort((a, b) => (a.data as unknown as AutomationNodeData).sequence - (b.data as unknown as AutomationNodeData).sequence)
+                .map(n => {
+                  const nd = n.data as unknown as AutomationNodeData;
+                  return { id: n.id, sequence: nd.sequence, label: nd.label };
+                })}
+            />
           )}
+
+          {/* 🟢 If / Else panel lives in components/IfElseConfigPanel.tsx */}
 
           {/* ═══════════════════════════════════════════
               SMART RETRY LOOP (DO-WHILE)
@@ -2324,7 +2249,7 @@ import {
     ]},
     { title: 'Logic & Flow', tools: [
       { icon: Timer,           label: 'Smart Wait',       nodeType: 'wait',          sub: 'Element or delay',   iName: 'Timer',             category: 'logic'   },
-      { icon: GitBranch,       label: 'If / Else Branch', nodeType: 'if_else',       sub: 'Data-driven logic',  iName: 'GitBranch',         category: 'logic',   badge: '↑', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+      { icon: GitBranch,       label: 'If / Else Branch', nodeType: 'if_else',       sub: 'Check, then choose the path',  iName: 'GitBranch',         category: 'logic',   badge: '↑', badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
       { icon: RefreshCw,       label: 'Smart Retry Loop', nodeType: 'condition_loop',sub: 'Do-While Auto Loop', iName: 'RefreshCw',         category: 'logic',   badge: 'LOOP', badgeColor: 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400' },
       
       // 👇 ये वाली नई लाइन यहाँ ऐड करें 👇
